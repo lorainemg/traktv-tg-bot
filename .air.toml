@@ -1,0 +1,18 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Command to build the project
+  cmd = "go build -o ./tmp/bot ./cmd/bot"
+  # Binary to run after build
+  bin = "./tmp/bot"
+  # Watch these file extensions
+  include_ext = ["go", "toml"]
+  # Ignore these directories
+  exclude_dir = ["tmp", "vendor"]
+  # Delay before rebuilding (in milliseconds)
+  delay = 1000
+
+[log]
+  # Show log time
+  time = false

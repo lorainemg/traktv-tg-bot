@@ -42,7 +42,8 @@ func formatAirDate(isoDate string) string {
 		return isoDate // fallback to raw string if parsing fails
 	}
 	// "January 2, 2006" uses the same reference date to define the output format.
-	return t.Format("January 2, 2006")
+	// 3:04 PM uses the reference time: 3=hour(12h), 04=minute, PM=am/pm marker
+	return t.Format("January 2, 2006 at 3:04 PM")
 }
 
 // StartPoller launches a background goroutine that periodically checks
