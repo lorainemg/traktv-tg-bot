@@ -3,8 +3,6 @@ services:
     build:
       context: .
       target: prod
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
@@ -14,8 +12,6 @@ services:
 
   postgres:
     image: postgres:17-alpine
-    env_file:
-      - .env
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
