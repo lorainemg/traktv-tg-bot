@@ -44,6 +44,11 @@ func NewBot(token string, db *gorm.DB, traktClient *trakt.Client) (*Bot, error) 
 	return b, nil
 }
 
+// GetBot returns the underlying *bot.Bot for use by other packages (e.g. the poller).
+func (b *Bot) GetBot() *bot.Bot {
+	return b.bot
+}
+
 // Start begins listening for Telegram updates.
 // It blocks until the context is cancelled.
 func (b *Bot) Start(ctx context.Context) {
@@ -83,36 +88,40 @@ func (b *Bot) handleLink(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 		Text:   fmt.Sprintf("Go to %s and enter code: %s", dc.VerificationURL, dc.UserCode),
 	})
 
-	// TODO(human): Implement the polling goroutine.
-	// Launch a goroutine that polls for the token in the background.
-	//
-	// Use this structure:
-	//   go func() {
-	//       ticker := time.NewTicker(time.Duration(dc.Interval) * time.Second)
-	//       defer ticker.Stop()
-	//
-	//       for range ticker.C {
-	//           // 1. Call b.traktClient.PollForToken(dc.DeviceCode)
-	//           // 2. If err != nil → send error message, return
-	//           // 3. If token == nil → continue (user hasn't authorized yet)
-	//           // 4. If token != nil → save to DB and send success message, return
-	//       }
-	//   }()
-	//
-	// To save to DB, use:
-	//   b.db.Create(&storage.User{
-	//       TelegramID:        telegramID,
-	//       TraktAccessToken:  token.AccessToken,
-	//       TraktRefreshToken: token.RefreshToken,
-	//   })
-	//
-	// Notes:
-	//   - time.NewTicker creates a channel that sends a value every N seconds
-	//   - "for range ticker.C" loops each time the ticker fires (like setInterval in JS)
-	//   - The goroutine captures variables from the outer function (closure)
-	//   - Use context.Background() for the SendMessage calls inside the goroutine,
-	//     since the original ctx may be done by then
-	_ = telegramID // remove when implementing
+	// Poll for the token in a goroutine (runs in the background).
+	// "go func() { ... }()" launches a lightweight concurrent function.
+	// It captures chatID, telegramID, dc, tgBot, and b from the outer scope (closure).
+	go func() {
+		// time.NewTicker sends a value on ticker.C every N seconds — like setInterval in JS.
+		ticker := time.NewTicker(time.Duration(dc.Interval) * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			token, err := b.traktClient.PollForToken(dc.DeviceCode)
+			if err != nil {
+				// Use context.Background() because the original handler ctx may be done by now.
+				_, _ = tgBot.SendMessage(context.Background(), &bot.SendMessageParams{
+					ChatID: chatID,
+					Text:   fmt.Sprintf("Trakt linking failed: %v", err),
+				})
+				return
+			}
+			if token == nil {
+				continue
+			}
+
+			b.db.Create(&storage.User{
+				TelegramID:        telegramID,
+				TraktAccessToken:  token.AccessToken,
+				TraktRefreshToken: token.RefreshToken,
+			})
+			_, _ = tgBot.SendMessage(context.Background(), &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   "Trakt account linked!",
+			})
+			return
+		}
+	}()
 }
 
 func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.Update) {

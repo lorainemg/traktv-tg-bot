@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/telegram"
@@ -40,7 +42,7 @@ func requireEnv(keys ...string) map[string]string {
 }
 
 func main() {
-	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET")
+	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TELEGRAM_CHAT_ID")
 
 	// Connect to PostgreSQL
 	db, err := storage.Connect(env["DATABASE_URL"])
@@ -60,10 +62,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// strconv.ParseInt converts a string to int64.
+	// Like int() in Python, but explicit about the base (10 = decimal) and bit size (64).
+	chatID, err := strconv.ParseInt(env["TELEGRAM_CHAT_ID"], 10, 64)
+	if err != nil {
+		fmt.Println("TELEGRAM_CHAT_ID must be a number:", err)
+		os.Exit(1)
+	}
+
 	// signal.NotifyContext creates a context that gets cancelled when the
 	// process receives SIGINT (Ctrl+C) or SIGTERM (docker stop).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Start the episode poller (checks every 30 seconds for testing, change to 1*time.Hour for production)
+	telegram.StartPoller(ctx, tgBot.GetBot(), db, traktClient, chatID, 30*time.Second)
 
 	fmt.Println("Bot is running... Press Ctrl+C to stop.")
 	tgBot.Start(ctx)
