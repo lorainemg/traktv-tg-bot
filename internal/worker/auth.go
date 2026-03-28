@@ -12,6 +12,7 @@ type AuthPayload struct {
 	TelegramID int64
 	ChatID     int64  // the chat where the user ran /auth — notifications go here
 	FirstName  string // user's Telegram display name — used in farewell messages
+	Username   string
 }
 
 // handleStartAuth handles /auth — either moves an existing user's notifications
@@ -35,8 +36,14 @@ func (w *Worker) handleStartAuth(task Task) {
 
 	if existing != nil {
 		w.handleExistingUserAuth(task, payload, existing)
+		// Update names on every /auth — catches Telegram display name changes.
+		err = w.store.UpdateUserNames(payload.TelegramID, payload.FirstName, payload.Username)
+		if err != nil {
+			fmt.Println("Error updating user names:", err)
+		}
 	} else {
 		w.handleNewUserAuth(task, payload)
+		// For new users, names are saved inside pollForToken when the record is created.
 	}
 }
 
@@ -53,10 +60,9 @@ func (w *Worker) handleExistingUserAuth(task Task, payload AuthPayload, existing
 	}
 
 	// Farewell message to the old chat with a clickable user mention.
-	userMention := fmt.Sprintf("[%s](tg://user?id=%d)", payload.FirstName, payload.TelegramID)
 	w.results <- Result{
 		ChatID: existing.ChatID,
-		Text:   fmt.Sprintf("%s has moved their notifications to another chat. Their notifications will no longer be sent here.", userMention),
+		Text:   fmt.Sprintf("%s has moved their notifications to another chat. Their notifications will no longer be sent here.", existing.MentionLink()),
 	}
 
 	if err := w.store.UpdateUserChatID(payload.TelegramID, task.ChatID); err != nil {
@@ -92,12 +98,12 @@ func (w *Worker) handleNewUserAuth(task Task, payload AuthPayload) {
 	}
 
 	// Poll in a goroutine so we don't block the worker loop.
-	go w.pollForToken(task.ChatID, payload.TelegramID, dc.DeviceCode, dc.Interval)
+	go w.pollForToken(task.ChatID, payload, dc.DeviceCode, dc.Interval)
 }
 
 // pollForToken repeatedly checks if the user has authorized the device code.
 // Runs as a separate goroutine so the worker's main loop stays free.
-func (w *Worker) pollForToken(chatID, telegramID int64, deviceCode string, intervalSecs int) {
+func (w *Worker) pollForToken(chatID int64, payload AuthPayload, deviceCode string, intervalSecs int) {
 	ticker := time.NewTicker(time.Duration(intervalSecs) * time.Second)
 	defer ticker.Stop()
 
@@ -117,7 +123,9 @@ func (w *Worker) pollForToken(chatID, telegramID int64, deviceCode string, inter
 
 		// pollForToken only runs for new users (Case 3), so just create.
 		err = w.store.CreateOrUpdateUser(&storage.User{
-			TelegramID:        telegramID,
+			TelegramID:        payload.TelegramID,
+			FirstName:         payload.FirstName,
+			Username:          payload.Username,
 			ChatID:            chatID,
 			TraktAccessToken:  token.AccessToken,
 			TraktRefreshToken: token.RefreshToken,

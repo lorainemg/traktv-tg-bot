@@ -20,6 +20,7 @@ const (
 	TaskCheckEpisodes  TaskType = iota // = 0
 	TaskStartAuth                      // = 1
 	TaskRegisterTopic                  // = 2
+	TaskSetMuted                       // = 3
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -37,6 +38,13 @@ type Result struct {
 	ThreadID int    // forum topic thread ID — 0 means send to the default/general topic
 	Text     string
 	PhotoURL string // if set, message is sent as a photo with Text as caption
+}
+
+// MutePayload carries the data needed to mute or unmute a user.
+type MutePayload struct {
+	TelegramID int64
+	ChatID     int64
+	Muted      bool // true = mute (stop notifications), false = unmute (resume)
 }
 
 // TopicPayload carries the data needed to register a forum topic.
@@ -107,6 +115,8 @@ func (w *Worker) process(task Task) {
 		w.handleStartAuth(task)
 	case TaskRegisterTopic:
 		w.handleRegisterTopic(task)
+	case TaskSetMuted:
+		w.handleSetMuted(task)
 	default:
 		fmt.Printf("Unknown task type: %d\n", task.Type)
 	}

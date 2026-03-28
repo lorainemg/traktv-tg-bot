@@ -23,6 +23,9 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 	today := time.Now().Format("2006-01-02")
 
 	for _, user := range users {
+		if user.Muted {
+			continue // skip users who opted out of notifications
+		}
 		w.checkUserEpisodes(user, today)
 	}
 }
@@ -31,7 +34,7 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 // and processes each episode entry. Notifications go to user.ChatID —
 // the chat where the user authenticated.
 func (w *Worker) checkUserEpisodes(user storage.User, day string) {
-	entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 5)
+	entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 15)
 	if err != nil {
 		fmt.Println("Error fetching calendar:", err)
 		return

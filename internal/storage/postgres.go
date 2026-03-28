@@ -13,9 +13,12 @@ import (
 type User struct {
 	gorm.Model              // embeds ID, CreatedAt, UpdatedAt, DeletedAt
 	TelegramID        int64 `gorm:"uniqueIndex"`
+	FirstName         string
+	Username          string
 	ChatID            int64 // Telegram chat where this user authenticated
 	TraktAccessToken  string
 	TraktRefreshToken string
+	Muted             bool // when true, the user won't receive episode notifications
 }
 
 // Topic maps a Telegram forum topic (thread) to a name for routing notifications.
@@ -48,11 +51,13 @@ type Service interface {
 	CreateUser(user *User) error
 	CreateOrUpdateUser(user *User) error
 	UpdateUserChatID(telegramID, chatID int64) error
+	UpdateUserNames(telegramID int64, firstName, username string) error
 	HasNotification(userID uint, showTitle, episodeKey string) (bool, error)
 	CreateNotification(notification *Notification) error
 	HasUserInChat(chatID int64) (bool, error)
 	GetTopics(chatID int64) ([]Topic, error)
 	CreateOrUpdateTopic(topic *Topic) error
+	UpdateUserMuted(telegramID int64, muted bool) error
 }
 
 // PostgresStore is the concrete implementation of Service using GORM + PostgreSQL.
@@ -126,12 +131,22 @@ func (s *PostgresStore) UpdateUserChatID(telegramID, chatID int64) error {
 	return nil
 }
 
+func (s *PostgresStore) UpdateUserNames(telegramID int64, firstName, username string) error {
+	result := s.db.Model(&User{}).Where("telegram_id = ?", telegramID).Updates(User{FirstName: firstName, Username: username})
+	if result.Error != nil {
+		return fmt.Errorf("updating names for user %d: %w", telegramID, result.Error)
+	}
+	return nil
+}
+
 // CreateOrUpdateUser upserts a user by TelegramID — updates tokens and ChatID
 // if the user already exists, otherwise inserts a new record.
 func (s *PostgresStore) CreateOrUpdateUser(user *User) error {
 	result := s.db.
 		Where("telegram_id = ?", user.TelegramID).
 		Assign(User{
+			FirstName:         user.FirstName,
+			Username:          user.Username,
 			ChatID:            user.ChatID,
 			TraktAccessToken:  user.TraktAccessToken,
 			TraktRefreshToken: user.TraktRefreshToken,
@@ -206,4 +221,28 @@ func (s *PostgresStore) CreateOrUpdateTopic(topic *Topic) error {
 		return fmt.Errorf("upserting topic: %w", result.Error)
 	}
 	return nil
+}
+
+// UpdateUserMuted sets the Muted flag for a user, controlling whether
+// they receive episode notifications.
+func (s *PostgresStore) UpdateUserMuted(telegramID int64, muted bool) error {
+	result := s.db.Model(&User{}).Where("telegram_id = ?", telegramID).Update("muted", muted)
+	if result.Error != nil {
+		return fmt.Errorf("updating muted status for user %d: %w", telegramID, result.Error)
+	}
+	return nil
+}
+
+// MentionLink returns a clickable Markdown mention for this user.
+// Prefers @username with an https://t.me link; falls back to FirstName
+// or "User" with tg://user deep link when no username is set.
+func (u *User) MentionLink() string {
+	if u.Username != "" {
+		return fmt.Sprintf("[@%s](https://t.me/%s)", u.Username, u.Username)
+	}
+	name := u.FirstName
+	if name == "" {
+		name = "User"
+	}
+	return fmt.Sprintf("[%s](tg://user?id=%d)", name, u.TelegramID)
 }

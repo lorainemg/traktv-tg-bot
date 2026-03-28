@@ -39,6 +39,9 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	// MatchTypePrefix matches any message starting with "/register_topic" —
 	// this lets us capture the argument after the command (e.g. "/register_topic anime").
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/register_topic", bot.MatchTypePrefix, b.handleRegisterTopic)
+	// MatchTypePrefix so "/mute@BotName" in group chats still matches.
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/mute", bot.MatchTypePrefix, b.handleMute)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
 
 	b.bot = tgBot
 	return b, nil
@@ -105,6 +108,7 @@ func (b *Bot) handleAuth(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
 			FirstName:  update.Message.From.FirstName,
+			Username:   update.Message.From.Username,
 		},
 	})
 }
@@ -144,6 +148,32 @@ func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *m
 			ChatID:   msg.Chat.ID,
 			ThreadID: msg.MessageThreadID,
 			Name:     name,
+		},
+	})
+}
+
+// handleMute submits a task to stop episode notifications for the calling user.
+func (b *Bot) handleMute(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	b.worker.Submit(worker.Task{
+		Type:   worker.TaskSetMuted,
+		ChatID: update.Message.Chat.ID,
+		Payload: worker.MutePayload{
+			TelegramID: update.Message.From.ID,
+			ChatID:     update.Message.Chat.ID,
+			Muted:      true,
+		},
+	})
+}
+
+// handleUnmute submits a task to resume episode notifications for the calling user.
+func (b *Bot) handleUnmute(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	b.worker.Submit(worker.Task{
+		Type:   worker.TaskSetMuted,
+		ChatID: update.Message.Chat.ID,
+		Payload: worker.MutePayload{
+			TelegramID: update.Message.From.ID,
+			ChatID:     update.Message.Chat.ID,
+			Muted:      false,
 		},
 	})
 }
