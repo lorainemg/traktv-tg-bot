@@ -7,14 +7,6 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 )
 
-// AuthPayload carries the data needed to start the Trakt OAuth device flow.
-type AuthPayload struct {
-	TelegramID int64
-	ChatID     int64  // the chat where the user ran /auth — notifications go here
-	FirstName  string // user's Telegram display name — used in farewell messages
-	Username   string
-}
-
 // handleStartAuth handles /auth — either moves an existing user's notifications
 // to the current chat, or starts the Trakt OAuth device flow for new users.
 func (w *Worker) handleStartAuth(task Task) {

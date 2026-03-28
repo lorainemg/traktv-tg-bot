@@ -9,51 +9,6 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
 )
 
-// TaskType identifies what kind of work a task represents.
-// Using a custom type instead of raw int makes the code self-documenting.
-type TaskType int
-
-// iota is Go's auto-incrementing constant generator.
-// It starts at 0 and increments by 1 for each constant in the block —
-// like an auto-numbered enum in C#.
-const (
-	TaskCheckEpisodes  TaskType = iota // = 0
-	TaskStartAuth                      // = 1
-	TaskRegisterTopic                  // = 2
-	TaskSetMuted                       // = 3
-)
-
-// Task represents a unit of work submitted to the worker queue.
-type Task struct {
-	Type    TaskType
-	ChatID  int64 // where to send Telegram responses
-	Payload any   // extra data, varies by task type (like interface{} — accepts any value)
-}
-
-// Result represents a message the worker wants delivered via Telegram.
-// The worker never talks to Telegram directly — it puts Results on a channel,
-// and the Telegram side reads and sends them.
-type Result struct {
-	ChatID   int64
-	ThreadID int    // forum topic thread ID — 0 means send to the default/general topic
-	Text     string
-	PhotoURL string // if set, message is sent as a photo with Text as caption
-}
-
-// MutePayload carries the data needed to mute or unmute a user.
-type MutePayload struct {
-	TelegramID int64
-	ChatID     int64
-	Muted      bool // true = mute (stop notifications), false = unmute (resume)
-}
-
-// TopicPayload carries the data needed to register a forum topic.
-type TopicPayload struct {
-	ChatID   int64
-	ThreadID int
-	Name     string // user-provided topic name, e.g. "anime"
-}
-
 // Worker reads tasks from a channel, processes them using the Trakt API
 // and storage service, and sends results back through another channel.
 type Worker struct {
