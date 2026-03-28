@@ -32,6 +32,15 @@ jobs:
       APPHOST_TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
       APPHOST_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+      # Aspire expects parameter values under config keys like Parameters:postgres-user.
+      # In environment variables, ":" maps to "__" in .NET configuration binding.
+      Parameters__postgres-user: ${{ secrets.POSTGRES_USER }}
+      Parameters__postgres-password: ${{ secrets.POSTGRES_PASSWORD }}
+      Parameters__telegram-bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      Parameters__trakt-client-id: ${{ secrets.TRAKT_CLIENT_ID }}
+      Parameters__trakt-client-secret: ${{ secrets.TRAKT_CLIENT_SECRET }}
+      Parameters__telegram-chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
