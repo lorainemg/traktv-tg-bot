@@ -21,15 +21,15 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 	today := time.Now().Format("2006-01-02")
 
 	for _, user := range users {
-		w.checkUserEpisodes(user, task, today)
+		w.checkUserEpisodes(user, today)
 	}
 }
 
 // checkUserEpisodes fetches today's calendar for a single user
-// and processes each episode entry.
-func (w *Worker) checkUserEpisodes(user storage.User, task Task, day string) {
-
-	entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 1)
+// and processes each episode entry. Notifications go to user.ChatID —
+// the chat where the user authenticated.
+func (w *Worker) checkUserEpisodes(user storage.User, day string) {
+	entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 5)
 	if err != nil {
 		fmt.Println("Error fetching calendar:", err)
 		return
@@ -38,7 +38,7 @@ func (w *Worker) checkUserEpisodes(user storage.User, task Task, day string) {
 
 	for _, entry := range entries {
 		episodeKey := fmt.Sprintf("S%02dE%02d", entry.Episode.Season, entry.Episode.Number)
-		w.notifyEpisode(user.ID, entry, episodeKey, task.ChatID)
+		w.notifyEpisode(user.ID, entry, episodeKey, user.ChatID)
 	}
 }
 
@@ -74,7 +74,7 @@ func (w *Worker) notifyEpisode(userID uint, entry trakt.CalendarEntry, episodeKe
 // formatEpisodeMessage builds the notification text for a single episode.
 func formatEpisodeMessage(entry trakt.CalendarEntry, episodeKey string) string {
 	airDate := formatAirDate(entry.FirstAired)
-	return fmt.Sprintf("📺 %s\n%s — \"%s\"\nAired: %s",
+	return fmt.Sprintf("📺 *%s*\n`%s` - \"_%s_\"\n🗓 %s",
 		entry.Show.Title, episodeKey, entry.Episode.Title, airDate)
 }
 

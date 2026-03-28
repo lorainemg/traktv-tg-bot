@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -41,7 +40,7 @@ func requireEnv(keys ...string) map[string]string {
 }
 
 func main() {
-	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TELEGRAM_CHAT_ID")
+	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET")
 
 	// Connect to PostgreSQL — now returns a *PostgresStore that satisfies storage.Service
 	store, err := storage.Connect(env["DATABASE_URL"])
@@ -52,12 +51,6 @@ func main() {
 	fmt.Println("Connected to database")
 
 	traktClient := trakt.NewClient(env["TRAKT_CLIENT_ID"], env["TRAKT_CLIENT_SECRET"])
-
-	chatID, err := strconv.ParseInt(env["TELEGRAM_CHAT_ID"], 10, 64)
-	if err != nil {
-		fmt.Println("TELEGRAM_CHAT_ID must be a number:", err)
-		os.Exit(1)
-	}
 
 	// Create the worker with a buffer size of 10.
 	// The worker orchestrates all background work: episode checks, user linking, etc.
@@ -90,12 +83,12 @@ func main() {
 		defer ticker.Stop()
 
 		// Check immediately on startup
-		w.Submit(worker.Task{Type: worker.TaskCheckEpisodes, ChatID: chatID})
+		w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
 
 		for {
 			select {
 			case <-ticker.C:
-				w.Submit(worker.Task{Type: worker.TaskCheckEpisodes, ChatID: chatID})
+				w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
 			case <-ctx.Done():
 				return
 			}

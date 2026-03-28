@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	// models provides Telegram API types like ParseMode, Update, etc.
 	"github.com/loraine/traktv-tg-bot/internal/worker"
 )
 
@@ -53,8 +54,9 @@ func (b *Bot) StartResultsForwarder(ctx context.Context) {
 			select {
 			case result := <-b.worker.Results():
 				_, _ = b.bot.SendMessage(context.Background(), &bot.SendMessageParams{
-					ChatID: result.ChatID,
-					Text:   result.Text,
+					ChatID:    result.ChatID,
+					Text:      result.Text,
+					ParseMode: models.ParseModeMarkdownV1,
 				})
 			case <-ctx.Done():
 				return
@@ -82,6 +84,7 @@ func (b *Bot) handleAuth(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 		ChatID: update.Message.Chat.ID,
 		Payload: worker.AuthPayload{
 			TelegramID: update.Message.From.ID,
+			ChatID:     update.Message.Chat.ID,
 		},
 	})
 }

@@ -13,6 +13,7 @@ import (
 type User struct {
 	gorm.Model              // embeds ID, CreatedAt, UpdatedAt, DeletedAt
 	TelegramID        int64 `gorm:"uniqueIndex"`
+	ChatID            int64 // Telegram chat where this user authenticated
 	TraktAccessToken  string
 	TraktRefreshToken string
 }

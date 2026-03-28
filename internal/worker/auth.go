@@ -10,6 +10,7 @@ import (
 // AuthPayload carries the data needed to start the Trakt OAuth device flow.
 type AuthPayload struct {
 	TelegramID int64
+	ChatID     int64 // the chat where the user ran /auth — notifications go here
 }
 
 // handleStartAuth initiates the Trakt device OAuth flow:
@@ -36,7 +37,7 @@ func (w *Worker) handleStartAuth(task Task) {
 	// Step 2: Send the verification URL back to the user via results channel
 	w.results <- Result{
 		ChatID: task.ChatID,
-		Text:   fmt.Sprintf("Go to %s and enter code: %s", dc.VerificationURL, dc.UserCode),
+		Text:   fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode),
 	}
 
 	// Step 3: Poll for the token in a goroutine so we don't block the worker loop.
@@ -65,9 +66,10 @@ func (w *Worker) pollForToken(chatID, telegramID int64, deviceCode string, inter
 			continue
 		}
 
-		// Token received — save the user
+		// Token received — save the user with their chat ID
 		err = w.store.CreateUser(&storage.User{
 			TelegramID:        telegramID,
+			ChatID:            chatID,
 			TraktAccessToken:  token.AccessToken,
 			TraktRefreshToken: token.RefreshToken,
 		})
