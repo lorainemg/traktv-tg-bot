@@ -19,6 +19,22 @@ func (w *Worker) handleRegisterTopic(task Task) {
 		return
 	}
 
+	// Guard: only allow topic registration in chats where at least
+	// one user has authenticated — prevents random groups from using the bot.
+	registered, err := w.store.HasUserInChat(payload.ChatID)
+	if err != nil {
+		fmt.Println("Error checking chat registration:", err)
+		return
+	}
+	if !registered {
+		w.results <- Result{
+			ChatID:   payload.ChatID,
+			ThreadID: payload.ThreadID,
+			Text:     "No authenticated users in this chat. Use /auth first.",
+		}
+		return
+	}
+
 	topic := &storage.Topic{
 		ChatID:   payload.ChatID,
 		ThreadID: payload.ThreadID,

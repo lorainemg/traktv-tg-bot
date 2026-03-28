@@ -44,9 +44,13 @@ type Notification struct {
 // no "implements" keyword needed (this is called "structural typing").
 type Service interface {
 	GetAllUsers() ([]User, error)
+	GetUserByTelegramID(telegramID int64) (*User, error)
 	CreateUser(user *User) error
+	CreateOrUpdateUser(user *User) error
+	UpdateUserChatID(telegramID, chatID int64) error
 	HasNotification(userID uint, showTitle, episodeKey string) (bool, error)
 	CreateNotification(notification *Notification) error
+	HasUserInChat(chatID int64) (bool, error)
 	GetTopics(chatID int64) ([]Topic, error)
 	CreateOrUpdateTopic(topic *Topic) error
 }
@@ -88,11 +92,53 @@ func (s *PostgresStore) GetAllUsers() ([]User, error) {
 	return users, nil
 }
 
+// GetUserByTelegramID looks up a user by their Telegram ID.
+// Returns (nil, nil) if the user doesn't exist — the caller checks for nil
+// to distinguish "not found" from "database error".
+func (s *PostgresStore) GetUserByTelegramID(telegramID int64) (*User, error) {
+	var user User
+	err := s.db.Where("telegram_id = ?", telegramID).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching user by telegram ID %d: %w", telegramID, err)
+	}
+	return &user, nil
+}
+
 // CreateUser inserts a new user record into the database.
 func (s *PostgresStore) CreateUser(user *User) error {
 	result := s.db.Create(user)
 	if result.Error != nil {
 		return fmt.Errorf("creating user: %w", result.Error)
+	}
+	return nil
+}
+
+// UpdateUserChatID changes the ChatID for an existing user, moving their
+// notifications to a different chat without touching their Trakt tokens.
+func (s *PostgresStore) UpdateUserChatID(telegramID, chatID int64) error {
+	result := s.db.Model(&User{}).Where("telegram_id = ?", telegramID).Update("chat_id", chatID)
+	if result.Error != nil {
+		return fmt.Errorf("updating chat ID for user %d: %w", telegramID, result.Error)
+	}
+	return nil
+}
+
+// CreateOrUpdateUser upserts a user by TelegramID — updates tokens and ChatID
+// if the user already exists, otherwise inserts a new record.
+func (s *PostgresStore) CreateOrUpdateUser(user *User) error {
+	result := s.db.
+		Where("telegram_id = ?", user.TelegramID).
+		Assign(User{
+			ChatID:            user.ChatID,
+			TraktAccessToken:  user.TraktAccessToken,
+			TraktRefreshToken: user.TraktRefreshToken,
+		}).
+		FirstOrCreate(user)
+	if result.Error != nil {
+		return fmt.Errorf("upserting user: %w", result.Error)
 	}
 	return nil
 }
@@ -118,6 +164,21 @@ func (s *PostgresStore) CreateNotification(notification *Notification) error {
 		return fmt.Errorf("creating notification: %w", result.Error)
 	}
 	return nil
+}
+
+// HasUserInChat checks whether at least one authenticated user exists
+// for the given chat. Uses the same errors.Is pattern as HasNotification —
+// ErrRecordNotFound means no user, any other error is a real failure.
+func (s *PostgresStore) HasUserInChat(chatID int64) (bool, error) {
+	var user User
+	err := s.db.Where("chat_id = ?", chatID).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("checking users in chat %d: %w", chatID, err)
+	}
+	return true, nil
 }
 
 // GetTopics returns all registered forum topics for a given chat.

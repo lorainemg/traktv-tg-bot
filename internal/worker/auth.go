@@ -10,12 +10,12 @@ import (
 // AuthPayload carries the data needed to start the Trakt OAuth device flow.
 type AuthPayload struct {
 	TelegramID int64
-	ChatID     int64 // the chat where the user ran /auth — notifications go here
+	ChatID     int64  // the chat where the user ran /auth — notifications go here
+	FirstName  string // user's Telegram display name — used in farewell messages
 }
 
-// handleStartAuth initiates the Trakt device OAuth flow:
-// requests a device code, sends the verification URL back through the results channel,
-// then polls for the token in a background goroutine.
+// handleStartAuth handles /auth — either moves an existing user's notifications
+// to the current chat, or starts the Trakt OAuth device flow for new users.
 func (w *Worker) handleStartAuth(task Task) {
 	payload, ok := task.Payload.(AuthPayload)
 	if !ok {
@@ -23,7 +23,59 @@ func (w *Worker) handleStartAuth(task Task) {
 		return
 	}
 
-	// Step 1: Request a device code from Trakt
+	existing, err := w.store.GetUserByTelegramID(payload.TelegramID)
+	if err != nil {
+		fmt.Println("Error looking up existing user:", err)
+		w.results <- Result{
+			ChatID: task.ChatID,
+			Text:   "Something went wrong. Please try again.",
+		}
+		return
+	}
+
+	if existing != nil {
+		w.handleExistingUserAuth(task, payload, existing)
+	} else {
+		w.handleNewUserAuth(task, payload)
+	}
+}
+
+// handleExistingUserAuth handles /auth when the user already has Trakt tokens.
+// If they're in the same chat, it's a no-op. If a different chat, it moves
+// their notifications here and sends a farewell to the old chat.
+func (w *Worker) handleExistingUserAuth(task Task, payload AuthPayload, existing *storage.User) {
+	if existing.ChatID == task.ChatID {
+		w.results <- Result{
+			ChatID: task.ChatID,
+			Text:   "You are already authenticated in this chat!",
+		}
+		return
+	}
+
+	// Farewell message to the old chat with a clickable user mention.
+	userMention := fmt.Sprintf("[%s](tg://user?id=%d)", payload.FirstName, payload.TelegramID)
+	w.results <- Result{
+		ChatID: existing.ChatID,
+		Text:   fmt.Sprintf("%s has moved their notifications to another chat. Their notifications will no longer be sent here.", userMention),
+	}
+
+	if err := w.store.UpdateUserChatID(payload.TelegramID, task.ChatID); err != nil {
+		fmt.Println("Error updating user chat ID:", err)
+		w.results <- Result{
+			ChatID: task.ChatID,
+			Text:   "Failed to move notifications. Please try again.",
+		}
+		return
+	}
+
+	w.results <- Result{
+		ChatID: task.ChatID,
+		Text:   "Trakt account already linked! Notifications will now be sent here.",
+	}
+}
+
+// handleNewUserAuth starts the Trakt OAuth device code flow for a first-time user.
+func (w *Worker) handleNewUserAuth(task Task, payload AuthPayload) {
 	dc, err := w.trakt.RequestDeviceCode()
 	if err != nil {
 		fmt.Println("Error requesting device code:", err)
@@ -34,15 +86,12 @@ func (w *Worker) handleStartAuth(task Task) {
 		return
 	}
 
-	// Step 2: Send the verification URL back to the user via results channel
 	w.results <- Result{
 		ChatID: task.ChatID,
 		Text:   fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode),
 	}
 
-	// Step 3: Poll for the token in a goroutine so we don't block the worker loop.
-	// Without "go", this would block Run() and no other tasks could be processed
-	// until the user finishes authorizing (which could take minutes).
+	// Poll in a goroutine so we don't block the worker loop.
 	go w.pollForToken(task.ChatID, payload.TelegramID, dc.DeviceCode, dc.Interval)
 }
 
@@ -66,15 +115,15 @@ func (w *Worker) pollForToken(chatID, telegramID int64, deviceCode string, inter
 			continue
 		}
 
-		// Token received — save the user with their chat ID
-		err = w.store.CreateUser(&storage.User{
+		// pollForToken only runs for new users (Case 3), so just create.
+		err = w.store.CreateOrUpdateUser(&storage.User{
 			TelegramID:        telegramID,
 			ChatID:            chatID,
 			TraktAccessToken:  token.AccessToken,
 			TraktRefreshToken: token.RefreshToken,
 		})
 		if err != nil {
-			fmt.Println("Error creating user:", err)
+			fmt.Println("Error saving user:", err)
 			w.results <- Result{
 				ChatID: chatID,
 				Text:   "Failed to save Trakt account. Please try again.",

@@ -104,6 +104,7 @@ func (b *Bot) handleAuth(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 		Payload: worker.AuthPayload{
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
+			FirstName:  update.Message.From.FirstName,
 		},
 	})
 }
