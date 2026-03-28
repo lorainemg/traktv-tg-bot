@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 const (
 	defaultBaseURL = "https://api.trakt.tv"
 	apiVersion     = "2"
+	maxRetries     = 3 // max times to retry a request after a 429
 )
 
 // CalendarEntry represents one item from the Trakt calendar API response.
@@ -103,23 +106,15 @@ func closeBody(body io.ReadCloser) {
 	}
 }
 
-// do execute an HTTP request with Trakt-required headers.
-// If the body is non-nil, it gets marshalled to JSON automatically.
+// newRequest builds an *http.Request with Trakt-required headers.
 // accessToken can be "" for unauthenticated endpoints (like OAuth).
-func (c *Client) do(method, path, accessToken string, body any) (*http.Response, error) {
-	url := c.baseURL + path
-
-	// If a body is provided, marshal it to JSON. Otherwise, pass nil (no body).
+func (c *Client) newRequest(method, path, accessToken string, jsonBody []byte) (*http.Request, error) {
 	var bodyReader io.Reader
-	if body != nil {
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("marshalling request body: %w", err)
-		}
+	if jsonBody != nil {
 		bodyReader = bytes.NewBuffer(jsonBody)
 	}
 
-	req, err := http.NewRequest(method, url, bodyReader)
+	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("creating trakt request: %w", err)
 	}
@@ -129,8 +124,53 @@ func (c *Client) do(method, path, accessToken string, body any) (*http.Response,
 	if accessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
+	return req, nil
+}
 
-	return c.httpClient.Do(req)
+// do executes an HTTP request with automatic retry on 429 (rate limited).
+// If body is non-nil, it gets marshalled to JSON automatically.
+func (c *Client) do(method, path, accessToken string, body any) (*http.Response, error) {
+	// Marshal once so we can reuse the bytes across retries.
+	var jsonBody []byte
+	if body != nil {
+		var err error
+		jsonBody, err = json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling request body: %w", err)
+		}
+	}
+
+	for attempt := range maxRetries {
+		req, err := c.newRequest(method, path, accessToken, jsonBody)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusTooManyRequests {
+			return resp, nil
+		}
+
+		closeBody(resp.Body)
+
+		// Default to 10s if Retry-After is missing or unparseable
+		retrySec := 10
+		if ra := resp.Header.Get("Retry-After"); ra != "" {
+			if parsed, err := strconv.Atoi(ra); err == nil {
+				retrySec = parsed
+			}
+		}
+
+		fmt.Printf("[trakt] 429 on %s %s — waiting %ds (%d/%d)\n",
+			method, path, retrySec, attempt+1, maxRetries)
+		time.Sleep(time.Duration(retrySec) * time.Second)
+	}
+
+	return nil, fmt.Errorf("trakt API %s %s: still rate limited after %d retries", method, path, maxRetries)
 }
 
 // GetCalendar fetches upcoming episodes for the user's followed shows.

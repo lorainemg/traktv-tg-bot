@@ -134,16 +134,6 @@ var broadTopicNames = map[string]bool{
 // resolveThreadID picks the best forum topic thread for an episode based on
 // the show's genres and the chat's registered topics.
 // Returns 0 (General) if no topics are registered or nothing matches.
-//
-// TODO(human): Implement the matching logic.
-// genres is a slice of lowercase strings from Trakt, e.g. ["anime", "drama", "fantasy"].
-// topics is a slice of storage.Topic, each with a .Name (lowercase) and .ThreadID.
-// broadTopicNames is a package-level set of names that count as "catch-all TV" topics.
-//
-// Priority:
-//  1. Exact genre match — if any genre matches a topic name, return that topic's ThreadID
-//  2. Broad match — if no genre matched, look for a topic whose name is in broadTopicNames
-//  3. Fallback — return 0 (sends to General)
 func resolveThreadID(genres []string, topics []storage.Topic) int {
 	for _, genre := range genres {
 		for _, topic := range topics {
