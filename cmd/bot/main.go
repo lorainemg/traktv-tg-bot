@@ -11,6 +11,7 @@ import (
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/telegram"
+	"github.com/loraine/traktv-tg-bot/internal/tmdb"
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
 	"github.com/loraine/traktv-tg-bot/internal/worker"
 )
@@ -40,7 +41,7 @@ func requireEnv(keys ...string) map[string]string {
 }
 
 func main() {
-	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET")
+	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TMDB_API_KEY")
 
 	// Connect to PostgreSQL — now returns a *PostgresStore that satisfies storage.Service
 	store, err := storage.Connect(env["DATABASE_URL"])
@@ -51,10 +52,11 @@ func main() {
 	fmt.Println("Connected to database")
 
 	traktClient := trakt.NewClient(env["TRAKT_CLIENT_ID"], env["TRAKT_CLIENT_SECRET"])
+	tmdbClient := tmdb.NewClient(env["TMDB_API_KEY"])
 
 	// Create the worker with a buffer size of 10.
 	// The worker orchestrates all background work: episode checks, user linking, etc.
-	w := worker.New(store, traktClient, 10)
+	w := worker.New(store, traktClient, tmdbClient, 10)
 
 	// Create the Telegram bot — it only depends on the worker, nothing else.
 	tgBot, err := telegram.NewBot(env["TELEGRAM_BOT_TOKEN"], w)

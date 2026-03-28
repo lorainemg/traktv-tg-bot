@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
+	"github.com/loraine/traktv-tg-bot/internal/tmdb"
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
 )
 
@@ -31,8 +32,9 @@ type Task struct {
 // The worker never talks to Telegram directly — it puts Results on a channel,
 // and the Telegram side reads and sends them.
 type Result struct {
-	ChatID int64
-	Text   string
+	ChatID   int64
+	Text     string
+	PhotoURL string // if set, message is sent as a photo with Text as caption
 }
 
 // Worker reads tasks from a channel, processes them using the Trakt API
@@ -42,17 +44,19 @@ type Worker struct {
 	results chan Result      // output queue — worker sends messages to deliver here
 	store   storage.Service // database operations (the interface, not the concrete type)
 	trakt   *trakt.Client   // Trakt API client
+	tmdb    *tmdb.Client    // TMDB API client — used for watch provider lookups
 }
 
 // New creates a Worker with buffered channels of the given size.
 // bufferSize controls how many tasks/results can queue up before
 // the sender blocks — like queue.Queue(maxsize=N) in Python.
-func New(store storage.Service, traktClient *trakt.Client, bufferSize int) *Worker {
+func New(store storage.Service, traktClient *trakt.Client, tmdbClient *tmdb.Client, bufferSize int) *Worker {
 	return &Worker{
 		tasks:   make(chan Task, bufferSize),
 		results: make(chan Result, bufferSize),
 		store:   store,
 		trakt:   traktClient,
+		tmdb:    tmdbClient,
 	}
 }
 

@@ -27,7 +27,35 @@ type Episode struct {
 }
 
 type Show struct {
-	Title string `json:"title"`
+	Title   string     `json:"title"`
+	IDs     ShowIDs    `json:"ids"`     // external identifiers — populated when using ?extended=full
+	Rating  float64    `json:"rating"`  // Trakt community rating (0-10), also from extended=full
+	Runtime int        `json:"runtime"` // typical episode length in minutes — from extended=full
+	Images  ShowImages `json:"images"`  // poster, fanart, etc. — from extended=full
+}
+
+// ShowImages holds image URLs returned by Trakt when using ?extended=full.
+// Each field is a slice because Trakt may return multiple URLs per type.
+// The URLs are missing the "https://" prefix — we prepend it when using them.
+type ShowImages struct {
+	Poster []string `json:"poster"`
+	Thumb  []string `json:"thumb"`
+}
+
+// WatchlistEntry represents one item from the Trakt watchlist API response.
+// We only need the show's IDs to build an exclusion set.
+type WatchlistEntry struct {
+	Show Show `json:"show"`
+}
+
+// ShowIDs holds the cross-platform identifiers that Trakt returns for a show.
+// We need TMDB to call the TMDB watch-providers API later.
+type ShowIDs struct {
+	Trakt int    `json:"trakt"`
+	Slug  string `json:"slug"`
+	IMDB  string `json:"imdb"`
+	TMDB  int    `json:"tmdb"`
+	TVDB  int    `json:"tvdb"`
 }
 
 // DeviceCode holds the response from POST /oauth/device/code.
@@ -107,7 +135,7 @@ func (c *Client) do(method, path, accessToken string, body any) (*http.Response,
 // GetCalendar fetches upcoming episodes for the user's followed shows.
 // Uses: GET /calendars/my/shows/:start_date/:days
 func (c *Client) GetCalendar(accessToken, startDate string, days int) ([]CalendarEntry, error) {
-	path := fmt.Sprintf("/calendars/my/shows/%s/%d", startDate, days)
+	path := fmt.Sprintf("/calendars/my/shows/%s/%d?extended=full", startDate, days)
 
 	resp, err := c.do(http.MethodGet, path, accessToken, nil)
 	if err != nil {
@@ -125,6 +153,34 @@ func (c *Client) GetCalendar(accessToken, startDate string, days int) ([]Calenda
 	}
 
 	return entries, nil
+}
+
+// GetWatchlistShows fetches the user's show watchlist and returns a set of
+// Trakt show IDs. This is used to exclude watchlisted (but not watched)
+// shows from episode notifications.
+func (c *Client) GetWatchlistShows(accessToken string) (map[int]bool, error) {
+	resp, err := c.do(http.MethodGet, "/users/me/watchlist/shows", accessToken, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching watchlist: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetching watchlist: unexpected status %d", resp.StatusCode)
+	}
+
+	var entries []WatchlistEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("decoding watchlist response: %w", err)
+	}
+
+	// Build a set using map[int]bool — like a set() in Python
+	watchlist := make(map[int]bool, len(entries))
+	for _, entry := range entries {
+		watchlist[entry.Show.IDs.Trakt] = true
+	}
+
+	return watchlist, nil
 }
 
 // RequestDeviceCode starts the device auth flow.

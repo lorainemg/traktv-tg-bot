@@ -53,10 +53,24 @@ func (b *Bot) StartResultsForwarder(ctx context.Context) {
 		for {
 			select {
 			case result := <-b.worker.Results():
+				// Build link preview options based on whether we have a photo
+				var preview *models.LinkPreviewOptions
+				if result.PhotoURL != "" {
+					preview = &models.LinkPreviewOptions{
+						URL:              &result.PhotoURL,
+						PreferLargeMedia: bot.False(), // centered image, smaller than SendPhoto
+						ShowAboveText:    bot.True(),  // image above the message text
+					}
+				} else {
+					preview = &models.LinkPreviewOptions{
+						IsDisabled: bot.True(),
+					}
+				}
 				_, _ = b.bot.SendMessage(context.Background(), &bot.SendMessageParams{
-					ChatID:    result.ChatID,
-					Text:      result.Text,
-					ParseMode: models.ParseModeMarkdownV1,
+					ChatID:             result.ChatID,
+					Text:               result.Text,
+					ParseMode:          models.ParseModeMarkdownV1,
+					LinkPreviewOptions: preview,
 				})
 			case <-ctx.Done():
 				return
