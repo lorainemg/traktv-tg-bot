@@ -13,18 +13,17 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/telegram"
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
+	"github.com/loraine/traktv-tg-bot/internal/worker"
 )
 
 // requireEnv reads multiple environment variables and exits if any are missing.
 // It takes a variadic parameter (...string) — like *args in Python or params string[] in C#.
 // Returns a map so you can look up each value by name.
 func requireEnv(keys ...string) map[string]string {
-	values := make(map[string]string) // make() creates an initialized map — like dict() in Python
+	values := make(map[string]string)
 	var missing []string
 
 	for _, key := range keys {
-		// range iterates over a slice, returning (index, value) on each step.
-		// _ discards the index since we don't need it — like "for _, key in enumerate(keys)" in Python.
 		val := os.Getenv(key)
 		if val == "" {
 			missing = append(missing, key)
@@ -44,29 +43,30 @@ func requireEnv(keys ...string) map[string]string {
 func main() {
 	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TELEGRAM_CHAT_ID")
 
-	// Connect to PostgreSQL
-	db, err := storage.Connect(env["DATABASE_URL"])
+	// Connect to PostgreSQL — now returns a *PostgresStore that satisfies storage.Service
+	store, err := storage.Connect(env["DATABASE_URL"])
 	if err != nil {
 		fmt.Println("Failed to connect to database:", err)
 		os.Exit(1)
 	}
 	fmt.Println("Connected to database")
 
-	// Create the Trakt API client
 	traktClient := trakt.NewClient(env["TRAKT_CLIENT_ID"], env["TRAKT_CLIENT_SECRET"])
 
-	// Create the Telegram bot
-	tgBot, err := telegram.NewBot(env["TELEGRAM_BOT_TOKEN"], db, traktClient)
-	if err != nil {
-		fmt.Println("Failed to create telegram bot:", err)
-		os.Exit(1)
-	}
-
-	// strconv.ParseInt converts a string to int64.
-	// Like int() in Python, but explicit about the base (10 = decimal) and bit size (64).
 	chatID, err := strconv.ParseInt(env["TELEGRAM_CHAT_ID"], 10, 64)
 	if err != nil {
 		fmt.Println("TELEGRAM_CHAT_ID must be a number:", err)
+		os.Exit(1)
+	}
+
+	// Create the worker with a buffer size of 10.
+	// The worker orchestrates all background work: episode checks, user linking, etc.
+	w := worker.New(store, traktClient, 10)
+
+	// Create the Telegram bot — it only depends on the worker, nothing else.
+	tgBot, err := telegram.NewBot(env["TELEGRAM_BOT_TOKEN"], w)
+	if err != nil {
+		fmt.Println("Failed to create telegram bot:", err)
 		os.Exit(1)
 	}
 
@@ -75,8 +75,32 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Start the episode poller (checks every 30 seconds for testing, change to 1*time.Hour for production)
-	telegram.StartPoller(ctx, tgBot.GetBot(), db, traktClient, chatID, 30*time.Second)
+	// Start the worker loop in the background.
+	// "go" launches it as a goroutine — it runs concurrently, not blocking main().
+	go w.Run(ctx)
+
+	// Start the results forwarder — reads from the worker's output channel
+	// and delivers messages via Telegram.
+	tgBot.StartResultsForwarder(ctx)
+
+	// Start the episode check ticker — replaces the old StartPoller.
+	// This goroutine just submits a task to the worker on a schedule.
+	go func() {
+		ticker := time.NewTicker(30 * time.Second) // change to 1*time.Hour for production
+		defer ticker.Stop()
+
+		// Check immediately on startup
+		w.Submit(worker.Task{Type: worker.TaskCheckEpisodes, ChatID: chatID})
+
+		for {
+			select {
+			case <-ticker.C:
+				w.Submit(worker.Task{Type: worker.TaskCheckEpisodes, ChatID: chatID})
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	fmt.Println("Bot is running... Press Ctrl+C to stop.")
 	tgBot.Start(ctx)
