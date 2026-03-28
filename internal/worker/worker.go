@@ -17,8 +17,9 @@ type TaskType int
 // It starts at 0 and increments by 1 for each constant in the block —
 // like an auto-numbered enum in C#.
 const (
-	TaskCheckEpisodes TaskType = iota // = 0
-	TaskStartAuth                     // = 1
+	TaskCheckEpisodes  TaskType = iota // = 0
+	TaskStartAuth                      // = 1
+	TaskRegisterTopic                  // = 2
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -33,8 +34,16 @@ type Task struct {
 // and the Telegram side reads and sends them.
 type Result struct {
 	ChatID   int64
+	ThreadID int    // forum topic thread ID — 0 means send to the default/general topic
 	Text     string
 	PhotoURL string // if set, message is sent as a photo with Text as caption
+}
+
+// TopicPayload carries the data needed to register a forum topic.
+type TopicPayload struct {
+	ChatID   int64
+	ThreadID int
+	Name     string // user-provided topic name, e.g. "anime"
 }
 
 // Worker reads tasks from a channel, processes them using the Trakt API
@@ -96,6 +105,8 @@ func (w *Worker) process(task Task) {
 		w.handleCheckEpisodes(task)
 	case TaskStartAuth:
 		w.handleStartAuth(task)
+	case TaskRegisterTopic:
+		w.handleRegisterTopic(task)
 	default:
 		fmt.Printf("Unknown task type: %d\n", task.Type)
 	}

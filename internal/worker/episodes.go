@@ -46,6 +46,15 @@ func (w *Worker) checkUserEpisodes(user storage.User, day string) {
 		watchlist = nil
 	}
 
+	// Fetch registered forum topics for this chat once — avoids hitting
+	// the database on every episode in the loop.
+	topics, err := w.store.GetTopics(user.ChatID)
+	if err != nil {
+		fmt.Println("Error fetching topics:", err)
+		// Non-fatal — notifications will go to General
+		topics = nil
+	}
+
 	for _, entry := range entries {
 		// Skip shows that are only on the watchlist (not actually watched)
 		if watchlist != nil && watchlist[entry.Show.IDs.Trakt] {
@@ -66,13 +75,15 @@ func (w *Worker) checkUserEpisodes(user storage.User, day string) {
 			}
 		}
 
-		w.notifyEpisode(user.ID, entry, episodeKey, user.ChatID, watchInfo)
+		w.notifyEpisode(user.ID, entry, episodeKey, user.ChatID, topics, watchInfo)
 	}
 }
 
 // notifyEpisode checks if an episode was already notified, and if not,
 // sends a Result to the output channel and saves the notification.
-func (w *Worker) notifyEpisode(userID uint, entry trakt.CalendarEntry, episodeKey string, chatID int64, watchInfo *tmdb.WatchInfo) {
+// topics is the list of registered forum topics for this chat — used to
+// route the notification to the right topic thread.
+func (w *Worker) notifyEpisode(userID uint, entry trakt.CalendarEntry, episodeKey string, chatID int64, topics []storage.Topic, watchInfo *tmdb.WatchInfo) {
 	hasNotification, err := w.store.HasNotification(userID, entry.Show.Title, episodeKey)
 	if err != nil {
 		fmt.Println("Error checking notification:", err)
@@ -88,9 +99,13 @@ func (w *Worker) notifyEpisode(userID uint, entry trakt.CalendarEntry, episodeKe
 		photoURL = "https://" + entry.Show.Images.Thumb[0]
 	}
 
+	// Determine which forum topic to send this episode to
+	threadID := resolveThreadID(entry.Show.Genres, topics)
+
 	// Send the message to the results channel for Telegram delivery
 	w.results <- Result{
 		ChatID:   chatID,
+		ThreadID: threadID,
 		Text:     formatEpisodeMessage(entry, episodeKey, watchInfo),
 		PhotoURL: photoURL,
 	}
@@ -104,6 +119,47 @@ func (w *Worker) notifyEpisode(userID uint, entry trakt.CalendarEntry, episodeKe
 	if err := w.store.CreateNotification(&notification); err != nil {
 		fmt.Println("Error saving notification:", err)
 	}
+}
+
+// broadTopicNames lists names that should catch any TV show, not just a specific genre.
+// Used as a fallback when no genre-specific topic matches.
+var broadTopicNames = map[string]bool{
+	"tv shows":  true,
+	"tv series": true,
+	"shows":     true,
+	"series":    true,
+	"tv":        true,
+}
+
+// resolveThreadID picks the best forum topic thread for an episode based on
+// the show's genres and the chat's registered topics.
+// Returns 0 (General) if no topics are registered or nothing matches.
+//
+// TODO(human): Implement the matching logic.
+// genres is a slice of lowercase strings from Trakt, e.g. ["anime", "drama", "fantasy"].
+// topics is a slice of storage.Topic, each with a .Name (lowercase) and .ThreadID.
+// broadTopicNames is a package-level set of names that count as "catch-all TV" topics.
+//
+// Priority:
+//  1. Exact genre match — if any genre matches a topic name, return that topic's ThreadID
+//  2. Broad match — if no genre matched, look for a topic whose name is in broadTopicNames
+//  3. Fallback — return 0 (sends to General)
+func resolveThreadID(genres []string, topics []storage.Topic) int {
+	for _, genre := range genres {
+		for _, topic := range topics {
+			if topic.Name == genre {
+				return topic.ThreadID
+			}
+		}
+	}
+	for broadName := range broadTopicNames {
+		for _, topic := range topics {
+			if broadName == topic.Name {
+				return topic.ThreadID
+			}
+		}
+	}
+	return 0
 }
 
 // hiddenProviders lists TMDB provider names we don't want to show in notifications.

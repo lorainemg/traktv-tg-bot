@@ -18,6 +18,15 @@ type User struct {
 	TraktRefreshToken string
 }
 
+// Topic maps a Telegram forum topic (thread) to a name for routing notifications.
+// For example, a topic named "anime" in a group chat receives anime episode updates.
+type Topic struct {
+	gorm.Model
+	ChatID   int64  `gorm:"uniqueIndex:idx_chat_topic"` // Telegram chat ID
+	ThreadID int    `gorm:"uniqueIndex:idx_chat_topic"` // forum topic's message_thread_id
+	Name     string // lowercase topic name, e.g. "anime", "tv shows"
+}
+
 // Notification tracks episodes we've already notified about,
 // so we don't send duplicates to the group.
 type Notification struct {
@@ -38,6 +47,8 @@ type Service interface {
 	CreateUser(user *User) error
 	HasNotification(userID uint, showTitle, episodeKey string) (bool, error)
 	CreateNotification(notification *Notification) error
+	GetTopics(chatID int64) ([]Topic, error)
+	CreateOrUpdateTopic(topic *Topic) error
 }
 
 // PostgresStore is the concrete implementation of Service using GORM + PostgreSQL.
@@ -56,7 +67,7 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 
 	// AutoMigrate creates or updates the table schema to match the struct.
 	// It will NOT delete unused columns — only add new ones or modify existing ones.
-	if err := db.AutoMigrate(&User{}, &Notification{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}); err != nil {
 		return nil, fmt.Errorf("running auto-migration: %w", err)
 	}
 
@@ -105,6 +116,33 @@ func (s *PostgresStore) CreateNotification(notification *Notification) error {
 	result := s.db.Create(notification)
 	if result.Error != nil {
 		return fmt.Errorf("creating notification: %w", result.Error)
+	}
+	return nil
+}
+
+// GetTopics returns all registered forum topics for a given chat.
+func (s *PostgresStore) GetTopics(chatID int64) ([]Topic, error) {
+	var topics []Topic
+	result := s.db.Where("chat_id = ?", chatID).Find(&topics)
+	if result.Error != nil {
+		return nil, fmt.Errorf("fetching topics for chat %d: %w", chatID, result.Error)
+	}
+	return topics, nil
+}
+
+// CreateOrUpdateTopic upserts a topic — if the chat+thread combo already exists,
+// it updates the name. Otherwise it creates a new record.
+// This uses GORM's Assign + FirstOrCreate pattern:
+//   - Where clause finds the row by ChatID+ThreadID
+//   - Assign sets the fields to update if it already exists
+//   - FirstOrCreate either finds or inserts
+func (s *PostgresStore) CreateOrUpdateTopic(topic *Topic) error {
+	result := s.db.
+		Where("chat_id = ? AND thread_id = ?", topic.ChatID, topic.ThreadID).
+		Assign(Topic{Name: topic.Name}).
+		FirstOrCreate(topic)
+	if result.Error != nil {
+		return fmt.Errorf("upserting topic: %w", result.Error)
 	}
 	return nil
 }

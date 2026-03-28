@@ -28,6 +28,7 @@ type Episode struct {
 
 type Show struct {
 	Title   string     `json:"title"`
+	Genres  []string   `json:"genres"`  // e.g. ["anime", "drama"] — lowercase strings from extended=full
 	IDs     ShowIDs    `json:"ids"`     // external identifiers — populated when using ?extended=full
 	Rating  float64    `json:"rating"`  // Trakt community rating (0-10), also from extended=full
 	Runtime int        `json:"runtime"` // typical episode length in minutes — from extended=full

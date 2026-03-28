@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -35,6 +36,9 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, b.handleStart)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/auth", bot.MatchTypeExact, b.handleAuth)
+	// MatchTypePrefix matches any message starting with "/register_topic" —
+	// this lets us capture the argument after the command (e.g. "/register_topic anime").
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/register_topic", bot.MatchTypePrefix, b.handleRegisterTopic)
 
 	b.bot = tgBot
 	return b, nil
@@ -68,6 +72,7 @@ func (b *Bot) StartResultsForwarder(ctx context.Context) {
 				}
 				_, _ = b.bot.SendMessage(context.Background(), &bot.SendMessageParams{
 					ChatID:             result.ChatID,
+					MessageThreadID:    result.ThreadID, // 0 sends to General/default topic
 					Text:               result.Text,
 					ParseMode:          models.ParseModeMarkdownV1,
 					LinkPreviewOptions: preview,
@@ -99,6 +104,45 @@ func (b *Bot) handleAuth(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 		Payload: worker.AuthPayload{
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
+		},
+	})
+}
+
+// handleRegisterTopic registers the current forum topic for episode routing.
+// Usage: /register_topic anime (run inside a forum topic)
+func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	msg := update.Message
+
+	// Parse the topic name from the command text.
+	// strings.TrimPrefix removes the command prefix, leaving just the argument.
+	// For "/register_topic anime", this gives us " anime" → trimmed to "anime".
+	name := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/register_topic"))
+	if name == "" {
+		_, _ = tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          msg.Chat.ID,
+			MessageThreadID: msg.MessageThreadID,
+			Text:            "Usage: /register_topic <name>\nExample: /register_topic anime",
+		})
+		return
+	}
+
+	// MessageThreadID is 0 when the message is NOT in a forum topic.
+	// This means the user ran the command in General or a non-forum chat.
+	if msg.MessageThreadID == 0 {
+		_, _ = tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "Please run this command inside a forum topic, not in General.",
+		})
+		return
+	}
+
+	b.worker.Submit(worker.Task{
+		Type:   worker.TaskRegisterTopic,
+		ChatID: msg.Chat.ID,
+		Payload: worker.TopicPayload{
+			ChatID:   msg.Chat.ID,
+			ThreadID: msg.MessageThreadID,
+			Name:     name,
 		},
 	})
 }
