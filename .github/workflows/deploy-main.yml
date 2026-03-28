@@ -155,7 +155,10 @@ jobs:
           import urllib.request
           import os
 
-          endpoint = os.environ["PORTAINER_URL"].rstrip("/")
+          endpoint = os.environ["PORTAINER_URL"].strip()
+          if not endpoint.startswith(("http://", "https://")):
+            endpoint = f"https://{endpoint}"
+          endpoint = endpoint.rstrip("/")
           stack_id = os.environ["PORTAINER_STACK_ID"]
           endpoint_id = os.environ["PORTAINER_ENDPOINT_ID"]
           token = os.environ["PORTAINER_API_TOKEN"]
@@ -176,7 +179,7 @@ jobs:
             method="PUT",
             data=json.dumps(payload).encode("utf-8"),
             headers={
-              "Authorization": f"Bearer {token}",
+              "X-API-Key": token,
               "Content-Type": "application/json",
             },
           )
