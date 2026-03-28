@@ -30,6 +30,12 @@ go.work.sum
 # Air hot reload temp directory
 tmp/
 
+# Aspire generated deployment artifacts
+aspire-output/
+
+# Copilot local skill artifacts
+.github/skills/
+
 # Editor/IDE
 .idea/
 .vscode/

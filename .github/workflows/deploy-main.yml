@@ -1,0 +1,186 @@
+name: Deploy Aspire App
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
+      PORTAINER_API_TOKEN: ${{ secrets.PORTAINER_API_TOKEN }}
+      PORTAINER_ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
+      PORTAINER_STACK_ID: ${{ secrets.PORTAINER_STACK_ID }}
+
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+      TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      APPHOST_POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      APPHOST_POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      APPHOST_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      APPHOST_TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+      APPHOST_TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
+      APPHOST_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_vars=(
+            PORTAINER_URL
+            PORTAINER_API_TOKEN
+            PORTAINER_ENDPOINT_ID
+            PORTAINER_STACK_ID
+            POSTGRES_USER
+            POSTGRES_PASSWORD
+            TELEGRAM_BOT_TOKEN
+            TRAKT_CLIENT_ID
+            TRAKT_CLIENT_SECRET
+            TELEGRAM_CHAT_ID
+          )
+
+          for var_name in "${required_vars[@]}"; do
+            if [ -z "${!var_name:-}" ]; then
+              echo "Missing required GitHub secret: ${var_name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Install Aspire CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSL https://aspire.dev/install.sh | bash
+          echo "$HOME/.aspire/bin" >> "$GITHUB_PATH"
+
+      - name: Show Aspire CLI version
+        shell: bash
+        run: aspire --version
+
+      - name: Push images and prepare env with Aspire
+        shell: bash
+        run: aspire do push-and-prepare-env --environment production --non-interactive
+
+      - name: Build Portainer stack environment payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          # Start from Aspire-generated env vars (includes image tags like BOT_IMAGE),
+          # then override runtime secrets from GitHub for deployment safety.
+          env_map = {}
+
+          env_path = Path("aspire-output/.env.production")
+          if not env_path.exists():
+            env_path = Path("aspire-output/.env")
+          if env_path.exists():
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+              line = raw_line.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                continue
+              key, value = line.split("=", 1)
+              env_map[key] = value
+
+          env_map["POSTGRES_USER"] = os.environ["POSTGRES_USER"]
+          env_map["POSTGRES_PASSWORD"] = os.environ["POSTGRES_PASSWORD"]
+          env_map["TELEGRAM_BOT_TOKEN"] = os.environ["TELEGRAM_BOT_TOKEN"]
+          env_map["TRAKT_CLIENT_ID"] = os.environ["TRAKT_CLIENT_ID"]
+          env_map["TRAKT_CLIENT_SECRET"] = os.environ["TRAKT_CLIENT_SECRET"]
+          env_map["TELEGRAM_CHAT_ID"] = os.environ["TELEGRAM_CHAT_ID"]
+
+          stack_env = [{"name": k, "value": v} for k, v in sorted(env_map.items())]
+
+          Path("aspire-output").mkdir(parents=True, exist_ok=True)
+          Path("aspire-output/portainer-stack-env.json").write_text(
+            json.dumps(stack_env),
+            encoding="utf-8",
+          )
+          PY
+
+      - name: Update Portainer stack
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          compose_file="aspire-output/docker-compose.yaml"
+          env_file_json="aspire-output/portainer-stack-env.json"
+
+          if [ ! -f "$compose_file" ]; then
+            echo "Expected compose file was not generated: $compose_file" >&2
+            exit 1
+          fi
+
+          if [ ! -f "$env_file_json" ]; then
+            echo "Expected env payload was not generated: $env_file_json" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import urllib.parse
+          import urllib.request
+          import os
+
+          endpoint = os.environ["PORTAINER_URL"].rstrip("/")
+          stack_id = os.environ["PORTAINER_STACK_ID"]
+          endpoint_id = os.environ["PORTAINER_ENDPOINT_ID"]
+          token = os.environ["PORTAINER_API_TOKEN"]
+          stack_file_content = Path("aspire-output/docker-compose.yaml").read_text(encoding="utf-8")
+          env_json = Path("aspire-output/portainer-stack-env.json").read_text(encoding="utf-8")
+
+          payload = {
+            "stackFileContent": stack_file_content,
+            "env": json.loads(env_json),
+            "prune": True,
+            "pullImage": True,
+          }
+
+          query = urllib.parse.urlencode({"endpointId": endpoint_id})
+          url = f"{endpoint}/api/stacks/{stack_id}?{query}"
+          req = urllib.request.Request(
+            url=url,
+            method="PUT",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+              "Authorization": f"Bearer {token}",
+              "Content-Type": "application/json",
+            },
+          )
+
+          try:
+            with urllib.request.urlopen(req) as response:
+              code = response.getcode()
+              body = response.read().decode("utf-8")
+          except Exception as exc:
+            raise SystemExit(f"Portainer stack update failed: {exc}") from exc
+
+          if code < 200 or code >= 300:
+            raise SystemExit(f"Portainer stack update returned status {code}: {body}")
+
+          print("Portainer stack updated successfully.")
+          PY
