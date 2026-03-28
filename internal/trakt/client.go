@@ -211,3 +211,38 @@ func (c *Client) PollForToken(deviceCode string) (*Token, error) {
 	}
 	return &t, nil
 }
+
+// MarkEpisodeWatched tells Trakt the user has watched a specific episode.
+// Uses: POST /sync/history — expects 201 Created on success.
+func (c *Client) MarkEpisodeWatched(accessToken string, traktShowID, season, episodeNumber int) error {
+	// Build the nested request body: shows → seasons → episodes
+	reqBody := SyncHistoryRequest{
+		Shows: []SyncShowEntry{
+			{
+				Ids: SyncShowIDs{Trakt: traktShowID},
+				Seasons: []SyncSeasonEntry{
+					{
+						Number: season,
+						Episodes: []SyncEpisodeEntry{
+							{
+								Number:    episodeNumber,
+								WatchedAt: time.Now().UTC().Format(time.RFC3339),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := c.do(http.MethodPost, "/sync/history", accessToken, reqBody)
+	if err != nil {
+		return fmt.Errorf("marking episode watched: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("marking episode watched: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}

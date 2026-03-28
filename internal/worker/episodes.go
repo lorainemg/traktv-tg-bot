@@ -34,10 +34,20 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 // and processes each episode entry. Notifications go to user.ChatID —
 // the chat where the user authenticated.
 func (w *Worker) checkUserEpisodes(user storage.User, day string) {
-	entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 15)
-	if err != nil {
-		fmt.Println("Error fetching calendar:", err)
-		return
+	// TODO(test): hardcoded Daredevil: Born Again S02E01 — remove after testing reaction feature
+	entries := []trakt.CalendarEntry{
+		{
+			FirstAired: "2026-03-28T02:00:00.000Z",
+			Episode:    trakt.Episode{Season: 2, Number: 1, Title: "Test Episode"},
+			Show: trakt.Show{
+				Title:   "Daredevil: Born Again",
+				Genres:  []string{"superhero", "drama", "crime", "action"},
+				IDs:     trakt.ShowIDs{Trakt: 195845, Slug: "daredevil-born-again", IMDB: "tt18923754", TMDB: 202555, TVDB: 422712},
+				Rating:  7.8,
+				Runtime: 53,
+				Images:  trakt.ShowImages{Thumb: []string{"media.trakt.tv/images/shows/000/195/845/thumbs/medium/66e362de13.jpg.webp"}},
+			},
+		},
 	}
 	fmt.Printf("Found %d episodes for user %d\n", len(entries), user.ID)
 
@@ -65,8 +75,6 @@ func (w *Worker) checkUserEpisodes(user storage.User, day string) {
 			continue
 		}
 
-		episodeKey := fmt.Sprintf("S%02dE%02d", entry.Episode.Season, entry.Episode.Number)
-
 		// Fetch watch providers for this show using its TMDB ID.
 		// We pass "US" as default — could be made configurable per user later.
 		var watchInfo *tmdb.WatchInfo
@@ -78,7 +86,7 @@ func (w *Worker) checkUserEpisodes(user storage.User, day string) {
 			}
 		}
 
-		w.notifyEpisode(user.ID, entry, episodeKey, user.ChatID, topics, watchInfo)
+		w.notifyEpisode(entry, user.ChatID, topics, watchInfo)
 	}
 }
 
@@ -86,14 +94,24 @@ func (w *Worker) checkUserEpisodes(user storage.User, day string) {
 // sends a Result to the output channel and saves the notification.
 // topics is the list of registered forum topics for this chat — used to
 // route the notification to the right topic thread.
-func (w *Worker) notifyEpisode(userID uint, entry trakt.CalendarEntry, episodeKey string, chatID int64, topics []storage.Topic, watchInfo *tmdb.WatchInfo) {
-	hasNotification, err := w.store.HasNotification(userID, entry.Show.Title, episodeKey)
+func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, topics []storage.Topic, watchInfo *tmdb.WatchInfo) {
+	hasNotification, err := w.store.HasNotification(chatID, entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
 	if err != nil {
 		fmt.Println("Error checking notification:", err)
 		return
 	}
 	if hasNotification {
 		return
+	}
+
+	// Build the notification record — scoped to the chat, not a specific user.
+	// Any user in this chat can later react to mark the episode as watched on their own Trakt account.
+	notification := storage.Notification{
+		ChatID:        chatID,
+		ShowTitle:     entry.Show.Title,
+		Season:        entry.Episode.Season,
+		EpisodeNumber: entry.Episode.Number,
+		TraktShowID:   entry.Show.IDs.Trakt,
 	}
 
 	// Build thumbnail URL — Trakt returns paths without the protocol prefix
@@ -105,22 +123,20 @@ func (w *Worker) notifyEpisode(userID uint, entry trakt.CalendarEntry, episodeKe
 	// Determine which forum topic to send this episode to
 	threadID := resolveThreadID(entry.Show.Genres, topics)
 
+	// Record the notification so we don't send it again
+	if err := w.store.CreateNotification(&notification); err != nil {
+		fmt.Println("Error saving notification:", err)
+	}
+
 	// Send the message to the results channel for Telegram delivery
 	w.results <- Result{
 		ChatID:   chatID,
 		ThreadID: threadID,
-		Text:     formatEpisodeMessage(entry, episodeKey, watchInfo),
+		Text:     formatEpisodeMessage(entry, notification.EpisodeKey(), watchInfo),
 		PhotoURL: photoURL,
-	}
-
-	// Record the notification so we don't send it again
-	notification := storage.Notification{
-		UserID:     userID,
-		ShowTitle:  entry.Show.Title,
-		EpisodeKey: episodeKey,
-	}
-	if err := w.store.CreateNotification(&notification); err != nil {
-		fmt.Println("Error saving notification:", err)
+		OnSent: func(messageID int) error {
+			return w.store.UpdateNotificationMessageID(notification.ID, messageID)
+		},
 	}
 }
 

@@ -64,3 +64,35 @@ type Token struct {
 	ExpiresIn    int    `json:"expires_in"`
 	CreatedAt    int    `json:"created_at"`
 }
+
+// --- Request types for POST /sync/history ---
+// These structs mirror the nested JSON the Trakt API expects:
+//   { "shows": [{ "ids": {...}, "seasons": [{ "number": 1, "episodes": [...] }] }] }
+
+// SyncHistoryRequest is the top-level request body for POST /sync/history.
+type SyncHistoryRequest struct {
+	Shows []SyncShowEntry `json:"shows"`
+}
+
+// SyncShowEntry identifies a show and which season/episodes to mark as watched.
+type SyncShowEntry struct {
+	Ids     SyncShowIDs       `json:"ids"`
+	Seasons []SyncSeasonEntry `json:"seasons"`
+}
+
+// SyncShowIDs holds the Trakt ID used to identify the show.
+type SyncShowIDs struct {
+	Trakt int `json:"trakt"`
+}
+
+// SyncSeasonEntry groups episodes under a season number.
+type SyncSeasonEntry struct {
+	Number   int                `json:"number"`
+	Episodes []SyncEpisodeEntry `json:"episodes"`
+}
+
+// SyncEpisodeEntry marks a single episode as watched at a specific time.
+type SyncEpisodeEntry struct {
+	Number    int    `json:"number"`
+	WatchedAt string `json:"watched_at"` // ISO 8601 timestamp, e.g. "2026-03-28T12:00:00Z"
+}

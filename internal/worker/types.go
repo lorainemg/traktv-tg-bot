@@ -8,10 +8,11 @@ type TaskType int
 // It starts at 0 and increments by 1 for each constant in the block —
 // like an auto-numbered enum in C#.
 const (
-	TaskCheckEpisodes  TaskType = iota // = 0
-	TaskStartAuth                      // = 1
-	TaskRegisterTopic                  // = 2
-	TaskSetMuted                       // = 3
+	TaskCheckEpisodes TaskType = iota // = 0
+	TaskStartAuth                     // = 1
+	TaskRegisterTopic                 // = 2
+	TaskSetMuted                      // = 3
+	TaskMarkWatched                   // = 4
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -26,9 +27,10 @@ type Task struct {
 // and the Telegram side reads and sends them.
 type Result struct {
 	ChatID   int64
-	ThreadID int    // forum topic thread ID — 0 means send to the default/general topic
+	ThreadID int // forum topic thread ID — 0 means send to the default/general topic
 	Text     string
 	PhotoURL string // if set, message is sent as a photo with Text as caption
+	OnSent   func(messageID int) error
 }
 
 // AuthPayload carries the data needed to start the Trakt OAuth device flow.
@@ -51,4 +53,12 @@ type TopicPayload struct {
 	ChatID   int64
 	ThreadID int
 	Name     string // user-provided topic name, e.g. "anime"
+}
+
+// MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.
+// The worker looks up the episode details from the Notification via TelegramMessageID.
+type MarkWatchedPayload struct {
+	TelegramID        int64 // the user who reacted — used to find their Trakt token
+	ChatID            int64 // where to send the confirmation message
+	TelegramMessageID int   // the notification message — used to find which episode
 }

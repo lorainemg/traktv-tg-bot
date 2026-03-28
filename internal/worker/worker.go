@@ -12,8 +12,8 @@ import (
 // Worker reads tasks from a channel, processes them using the Trakt API
 // and storage service, and sends results back through another channel.
 type Worker struct {
-	tasks   chan Task        // input queue — other packages send tasks here
-	results chan Result      // output queue — worker sends messages to deliver here
+	tasks   chan Task       // input queue — other packages send tasks here
+	results chan Result     // output queue — worker sends messages to deliver here
 	store   storage.Service // database operations (the interface, not the concrete type)
 	trakt   *trakt.Client   // Trakt API client
 	tmdb    *tmdb.Client    // TMDB API client — used for watch provider lookups
@@ -72,6 +72,8 @@ func (w *Worker) process(task Task) {
 		w.handleRegisterTopic(task)
 	case TaskSetMuted:
 		w.handleSetMuted(task)
+	case TaskMarkWatched:
+		w.handleMarkWatched(task)
 	default:
 		fmt.Printf("Unknown task type: %d\n", task.Type)
 	}

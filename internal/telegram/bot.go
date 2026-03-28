@@ -27,6 +27,12 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 
 	opts := []bot.Option{
 		bot.WithDefaultHandler(b.handleDefault),
+		// By default, Telegram only sends message updates. We need to explicitly
+		// request message_reaction updates so the bot receives emoji reactions.
+		bot.WithAllowedUpdates(bot.AllowedUpdates{
+			"message",
+			"message_reaction",
+		}),
 	}
 
 	tgBot, err := bot.New(token, opts...)
@@ -53,6 +59,41 @@ func (b *Bot) Start(ctx context.Context) {
 	b.bot.Start(ctx)
 }
 
+// SendResultsMessage sends a message or photo to a Telegram chat based on the provided result and invokes the OnSent callback.
+func (b *Bot) SendResultsMessage(result worker.Result) {
+	// Build link preview options based on whether we have a photo
+	var preview *models.LinkPreviewOptions
+	if result.PhotoURL != "" {
+		preview = &models.LinkPreviewOptions{
+			URL:              &result.PhotoURL,
+			PreferLargeMedia: bot.False(), // centered image, smaller than SendPhoto
+			ShowAboveText:    bot.True(),  // image above the message text
+		}
+	} else {
+		preview = &models.LinkPreviewOptions{
+			IsDisabled: bot.True(),
+		}
+	}
+	msg, err := b.bot.SendMessage(context.Background(), &bot.SendMessageParams{
+		ChatID:             result.ChatID,
+		MessageThreadID:    result.ThreadID, // 0 sends to General/default topic
+		Text:               result.Text,
+		ParseMode:          models.ParseModeMarkdownV1,
+		LinkPreviewOptions: preview,
+	})
+	if err != nil {
+		fmt.Println("Error sending message:", err)
+		return
+	}
+
+	// Call the OnSent callback to save the Telegram message ID back to the DB
+	if result.OnSent != nil {
+		if err := result.OnSent(msg.ID); err != nil {
+			fmt.Println("Error in OnSent callback:", err)
+		}
+	}
+}
+
 // StartResultsForwarder launches a background goroutine that reads Results
 // from the worker's output channel and delivers them as Telegram messages.
 func (b *Bot) StartResultsForwarder(ctx context.Context) {
@@ -60,26 +101,7 @@ func (b *Bot) StartResultsForwarder(ctx context.Context) {
 		for {
 			select {
 			case result := <-b.worker.Results():
-				// Build link preview options based on whether we have a photo
-				var preview *models.LinkPreviewOptions
-				if result.PhotoURL != "" {
-					preview = &models.LinkPreviewOptions{
-						URL:              &result.PhotoURL,
-						PreferLargeMedia: bot.False(), // centered image, smaller than SendPhoto
-						ShowAboveText:    bot.True(),  // image above the message text
-					}
-				} else {
-					preview = &models.LinkPreviewOptions{
-						IsDisabled: bot.True(),
-					}
-				}
-				_, _ = b.bot.SendMessage(context.Background(), &bot.SendMessageParams{
-					ChatID:             result.ChatID,
-					MessageThreadID:    result.ThreadID, // 0 sends to General/default topic
-					Text:               result.Text,
-					ParseMode:          models.ParseModeMarkdownV1,
-					LinkPreviewOptions: preview,
-				})
+				b.SendResultsMessage(result)
 			case <-ctx.Done():
 				return
 			}
@@ -178,6 +200,44 @@ func (b *Bot) handleUnmute(ctx context.Context, tgBot *bot.Bot, update *models.U
 	})
 }
 
+// handleDefault receives all updates not matched by a specific handler.
+// We use it to catch message reactions, since the library has no dedicated
+// HandlerType for reactions.
 func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
-	// Ignore non-command messages for now
+	if update.MessageReaction != nil {
+		b.handleReaction(update.MessageReaction)
+	}
+}
+
+// watchedEmoji is the reaction emoji that triggers "mark as watched" on Trakt.
+const watchedEmoji = "👀"
+
+// handleReaction processes a message reaction update.
+// If a user reacts with 👀 on an episode notification, it submits a task
+// to mark that episode as watched on the user's Trakt account.
+func (b *Bot) handleReaction(reaction *models.MessageReactionUpdated) {
+	// Only process reactions from users (not channels/anonymous)
+	if reaction.User == nil {
+		return
+	}
+
+	// Check if any of the new reactions is the "watched" emoji.
+	// NewReaction contains only the reactions that were just added.
+	for _, r := range reaction.NewReaction {
+		if r.Type == models.ReactionTypeTypeEmoji &&
+			r.ReactionTypeEmoji != nil &&
+			r.ReactionTypeEmoji.Emoji == watchedEmoji {
+
+			b.worker.Submit(worker.Task{
+				Type:   worker.TaskMarkWatched,
+				ChatID: reaction.Chat.ID,
+				Payload: worker.MarkWatchedPayload{
+					TelegramID:        reaction.User.ID,
+					ChatID:            reaction.Chat.ID,
+					TelegramMessageID: reaction.MessageID,
+				},
+			})
+			return // one reaction is enough, no need to check the rest
+		}
+	}
 }

@@ -60,6 +60,18 @@ func (s *PostgresStore) GetUserByTelegramID(telegramID int64) (*User, error) {
 	return &user, nil
 }
 
+func (s *PostgresStore) GetNotificationByMessageID(messageID int) (*Notification, error) {
+	var notification Notification
+	err := s.db.Where("telegram_message_id = ?", messageID).First(&notification).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching notification by message ID %d: %w", messageID, err)
+	}
+	return &notification, nil
+}
+
 // CreateUser inserts a new user record into the database.
 func (s *PostgresStore) CreateUser(user *User) error {
 	result := s.db.Create(user)
@@ -87,6 +99,14 @@ func (s *PostgresStore) UpdateUserNames(telegramID int64, firstName, username st
 	return nil
 }
 
+func (s *PostgresStore) UpdateNotificationMessageID(notificationID uint, messageID int) error {
+	result := s.db.Model(&Notification{}).Where("id = ?", notificationID).Update("telegram_message_id", messageID)
+	if result.Error != nil {
+		return fmt.Errorf("updating notification message ID for ID %d: %w", notificationID, result.Error)
+	}
+	return nil
+}
+
 // CreateOrUpdateUser upserts a user by TelegramID — updates tokens and ChatID
 // if the user already exists, otherwise inserts a new record.
 func (s *PostgresStore) CreateOrUpdateUser(user *User) error {
@@ -107,12 +127,12 @@ func (s *PostgresStore) CreateOrUpdateUser(user *User) error {
 }
 
 // HasNotification checks whether a notification already exists for the given
-// userID, showTitle, and episodeKey combination.
-func (s *PostgresStore) HasNotification(userID uint, showTitle, episodeKey string) (bool, error) {
+// chatID, showTitle, season, and episodeNumber combination.
+func (s *PostgresStore) HasNotification(chatID int64, showTitle string, season, episodeNumber int) (bool, error) {
 	var notification Notification
 	err := s.db.Where(
-		"user_id = ? AND show_title = ? AND episode_key = ?",
-		userID, showTitle, episodeKey,
+		"chat_id = ? AND show_title = ? AND season = ? AND episode_number = ?",
+		chatID, showTitle, season, episodeNumber,
 	).First(&notification).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, nil

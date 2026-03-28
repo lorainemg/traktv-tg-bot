@@ -7,11 +7,13 @@ package storage
 type Service interface {
 	GetAllUsers() ([]User, error)
 	GetUserByTelegramID(telegramID int64) (*User, error)
+	GetNotificationByMessageID(messageID int) (*Notification, error)
 	CreateUser(user *User) error
 	CreateOrUpdateUser(user *User) error
 	UpdateUserChatID(telegramID, chatID int64) error
 	UpdateUserNames(telegramID int64, firstName, username string) error
-	HasNotification(userID uint, showTitle, episodeKey string) (bool, error)
+	UpdateNotificationMessageID(notificationID uint, messageID int) error
+	HasNotification(chatID int64, showTitle string, season, episodeNumber int) (bool, error)
 	CreateNotification(notification *Notification) error
 	HasUserInChat(chatID int64) (bool, error)
 	GetTopics(chatID int64) ([]Topic, error)

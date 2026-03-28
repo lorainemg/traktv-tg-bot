@@ -43,12 +43,19 @@ type Topic struct {
 }
 
 // Notification tracks episodes we've already notified about,
-// so we don't send duplicates to the group.
+// so we don't send duplicates to the group chat.
+// One notification per show+episode combo per chat — shared across all users in that chat.
 type Notification struct {
 	gorm.Model
-	// Composite unique index: one notification per show+episode combo per user.
-	// GORM creates a single index spanning all three fields tagged with the same index name.
-	UserID     uint   `gorm:"uniqueIndex:idx_user_episode"`
-	ShowTitle  string `gorm:"uniqueIndex:idx_user_episode"`
-	EpisodeKey string `gorm:"uniqueIndex:idx_user_episode"` // e.g. "S02E05"
+	// Composite unique index: one notification per show+episode combo per chat.
+	ChatID            int64  `gorm:"uniqueIndex:idx_chat_episode"`
+	ShowTitle         string `gorm:"uniqueIndex:idx_chat_episode"`
+	Season            int    `gorm:"uniqueIndex:idx_chat_episode"`
+	EpisodeNumber     int    `gorm:"uniqueIndex:idx_chat_episode"`
+	TraktShowID       int
+	TelegramMessageID int
+}
+
+func (n *Notification) EpisodeKey() string {
+	return fmt.Sprintf("S%02dE%02d", n.Season, n.EpisodeNumber)
 }
