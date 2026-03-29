@@ -99,11 +99,14 @@ jobs:
       - name: Debug - show generated files
         shell: bash
         run: |
-          echo "=== .env.production ==="
-          cat aspire-output/.env.production || echo "file not found"
+          echo "=== files in aspire-output ==="
+          ls -la aspire-output/
           echo ""
-          echo "=== docker-compose.yaml ==="
-          cat aspire-output/docker-compose.yaml || echo "file not found"
+          echo "=== .env files ==="
+          for f in aspire-output/.env*; do
+            echo "--- $f ---"
+            cat "$f" 2>/dev/null || echo "not found"
+          done
 
       - name: Deploy to Portainer
         uses: cssnr/portainer-stack-deploy-action@v1
