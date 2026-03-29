@@ -159,6 +159,31 @@ func (c *Client) GetWatchlistShows(accessToken string) (map[int]bool, error) {
 	return watchlist, nil
 }
 
+// GetWatchHistory fetches the user's recent episode watch history from Trakt.
+// startAt limits results to watches after this ISO 8601 timestamp, so we only
+// get recent activity instead of the user's entire history.
+// Uses: GET /users/me/history/episodes?start_at=...
+func (c *Client) GetWatchHistory(accessToken, startAt string) ([]HistoryEntry, error) {
+	path := fmt.Sprintf("/users/me/history/episodes?start_at=%s", startAt)
+
+	resp, err := c.do(http.MethodGet, path, accessToken, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching watch history: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetching watch history: unexpected status %d", resp.StatusCode)
+	}
+
+	var entries []HistoryEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("decoding watch history response: %w", err)
+	}
+
+	return entries, nil
+}
+
 // RequestDeviceCode starts the device auth flow.
 // Returns a DeviceCode containing the user_code the user must enter at the verification URL.
 func (c *Client) RequestDeviceCode() (*DeviceCode, error) {

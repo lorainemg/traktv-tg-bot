@@ -116,3 +116,7 @@ func formatAirDate(isoDate string) string {
 	}
 	return t.In(eastern).Format("Jan 2 at 3:04 PM EST")
 }
+
+func episodeKey(traktId, season, episodeNumber int) string {
+	return fmt.Sprintf("%d-%02d-%02d", traktId, season, episodeNumber)
+}

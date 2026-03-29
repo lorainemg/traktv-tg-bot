@@ -8,11 +8,12 @@ type TaskType int
 // It starts at 0 and increments by 1 for each constant in the block —
 // like an auto-numbered enum in C#.
 const (
-	TaskCheckEpisodes TaskType = iota // = 0
-	TaskStartAuth                     // = 1
-	TaskRegisterTopic                 // = 2
-	TaskSetMuted                      // = 3
-	TaskMarkWatched                   // = 4
+	TaskCheckEpisodes     TaskType = iota // = 0
+	TaskStartAuth                        // = 1
+	TaskRegisterTopic                    // = 2
+	TaskSetMuted                         // = 3
+	TaskMarkWatched                      // = 4
+	TaskCheckWatchHistory                // = 5
 )
 
 // Task represents a unit of work submitted to the worker queue.

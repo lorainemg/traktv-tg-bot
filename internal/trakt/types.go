@@ -65,6 +65,14 @@ type Token struct {
 	CreatedAt    int    `json:"created_at"`
 }
 
+// HistoryEntry represents one item from the Trakt watch history API response.
+// GET /users/me/history/episodes returns an array of these.
+type HistoryEntry struct {
+	WatchedAt string  `json:"watched_at"` // ISO 8601 timestamp of when the user watched it
+	Episode   Episode `json:"episode"`
+	Show      Show    `json:"show"`
+}
+
 // --- Request types for POST /sync/history ---
 // These structs mirror the nested JSON the Trakt API expects:
 //   { "shows": [{ "ids": {...}, "seasons": [{ "number": 1, "episodes": [...] }] }] }

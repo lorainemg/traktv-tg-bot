@@ -87,9 +87,10 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 			if watchlistShows[entry.Show.IDs.Trakt] {
 				continue
 			}
-			key := fmt.Sprintf("%s-S%02dE%02d", entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
+			key := episodeKey(entry.Show.IDs.Trakt, entry.Episode.Season, entry.Episode.Number)
 			episodes[key] = entry
 		}
+
 	}
 
 	return episodes

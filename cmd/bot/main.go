@@ -40,6 +40,40 @@ func requireEnv(keys ...string) map[string]string {
 	return values
 }
 
+// startEpisodeChecker submits an episode check task on a schedule.
+// Checks immediately on startup, then every 30 seconds (change to 1h for production).
+func startEpisodeChecker(ctx context.Context, w *worker.Worker) {
+	ticker := time.NewTicker(30 * time.Second) // change to 1*time.Hour for production
+	defer ticker.Stop()
+
+	w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
+
+	for {
+		select {
+		case <-ticker.C:
+			w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// startWatchHistoryChecker detects episodes marked as watched directly on Trakt
+// and updates the corresponding TG notification messages.
+func startWatchHistoryChecker(ctx context.Context, w *worker.Worker) {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			w.Submit(worker.Task{Type: worker.TaskCheckWatchHistory})
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func main() {
 	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TMDB_API_KEY")
 
@@ -78,24 +112,8 @@ func main() {
 	// and delivers messages via Telegram.
 	tgBot.StartResultsForwarder(ctx)
 
-	// Start the episode check ticker — replaces the old StartPoller.
-	// This goroutine just submits a task to the worker on a schedule.
-	go func() {
-		ticker := time.NewTicker(30 * time.Second) // change to 1*time.Hour for production
-		defer ticker.Stop()
-
-		// Check immediately on startup
-		w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
-
-		for {
-			select {
-			case <-ticker.C:
-				w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go startEpisodeChecker(ctx, w)
+	go startWatchHistoryChecker(ctx, w)
 
 	fmt.Println("Bot is running... Press Ctrl+C to stop.")
 	tgBot.Start(ctx)

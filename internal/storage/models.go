@@ -92,7 +92,8 @@ type WatchStatus struct {
 	UserID         uint `gorm:"uniqueIndex:idx_notification_user"`
 	Watched        bool // false = ⏳ (pending), true = ✅ (watched)
 
-	// GORM associations — lets us eager-load the related User with Preload().
-	// "foreignKey:UserID" tells GORM which field in this struct points to User's primary key.
-	User User `gorm:"foreignKey:UserID"`
+	// GORM associations — lets us eager-load related records with Preload().
+	// "foreignKey:..." tells GORM which field in this struct points to the related table's primary key.
+	User         User         `gorm:"foreignKey:UserID"`
+	Notification Notification `gorm:"foreignKey:NotificationID"`
 }

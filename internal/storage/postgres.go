@@ -246,6 +246,21 @@ func (s *PostgresStore) GetWatchStatuses(notificationID uint) ([]WatchStatus, er
 	return statuses, nil
 }
 
+// GetUnwatchedStatusesByUser returns all WatchStatus rows where a specific user
+// hasn't watched yet (Watched=false), with the Notification preloaded.
+// This lets the caller access notification.TraktShowID, Season, EpisodeNumber
+// to cross-reference against Trakt watch history.
+func (s *PostgresStore) GetUnwatchedStatusesByUser(userID uint) ([]WatchStatus, error) {
+	var statuses []WatchStatus
+	err := s.db.Preload("Notification").
+		Where("user_id = ? AND watched = ?", userID, false).
+		Find(&statuses).Error
+	if err != nil {
+		return nil, fmt.Errorf("fetching unwatched statuses for user %d: %w", userID, err)
+	}
+	return statuses, nil
+}
+
 // MarkWatchStatus sets Watched=true for a specific user on a specific notification.
 // Uses GORM's Update with a Where clause targeting both foreign keys.
 func (s *PostgresStore) MarkWatchStatus(notificationID uint, userID uint) error {

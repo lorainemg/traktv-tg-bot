@@ -24,5 +24,6 @@ GetUserByTelegramID(telegramID int64) (*User, error)
 	// WatchStatus methods — track per-user watched state on episode notifications
 	CreateWatchStatuses(notificationID uint, userIDs []uint) error
 	GetWatchStatuses(notificationID uint) ([]WatchStatus, error)
+	GetUnwatchedStatusesByUser(userID uint) ([]WatchStatus, error)
 	MarkWatchStatus(notificationID uint, userID uint) error
 }
