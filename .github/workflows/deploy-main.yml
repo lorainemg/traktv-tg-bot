@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
 
@@ -75,53 +76,6 @@ jobs:
       - name: Push images and prepare env with Aspire
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
-
-
-      - name: Debug - show generated files
-        shell: bash
-        run: |
-          echo "=== files in aspire-output ==="
-          ls -la aspire-output/
-          echo ""
-          echo "=== .env files ==="
-          for f in aspire-output/.env*; do
-            echo "--- $f ---"
-            cat "$f" 2>/dev/null || echo "not found"
-          done
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: aspire-output
-          path: aspire-output/
-          include-hidden-files: true
-          retention-days: 1
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: read
-
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: aspire-output
-          path: aspire-output/
-
-      - name: Debug - show generated files
-        shell: bash
-        run: |
-          echo "=== files in aspire-output ==="
-          ls -la aspire-output/
-          echo ""
-          echo "=== .env files ==="
-          for f in aspire-output/.env*; do
-            echo "--- $f ---"
-            cat "$f" 2>/dev/null || echo "not found"
-          done
 
       - name: Deploy to Portainer
         uses: cssnr/portainer-stack-deploy-action@v1
