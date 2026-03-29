@@ -6,40 +6,40 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
+  PORTAINER_API_TOKEN: ${{ secrets.PORTAINER_API_TOKEN }}
+  PORTAINER_ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
+  PORTAINER_STACK_ID: ${{ secrets.PORTAINER_STACK_ID }}
+
+  POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+  TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+  APPHOST_POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+  APPHOST_POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  APPHOST_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  APPHOST_TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+  APPHOST_TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
+  APPHOST_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+  # Aspire expects parameter values under config keys like Parameters:postgres-user.
+  # In environment variables, ":" maps to "__" in .NET configuration binding.
+  Parameters__postgres-user: ${{ secrets.POSTGRES_USER }}
+  Parameters__postgres-password: ${{ secrets.POSTGRES_PASSWORD }}
+  Parameters__telegram-bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  Parameters__trakt-client-id: ${{ secrets.TRAKT_CLIENT_ID }}
+  Parameters__trakt-client-secret: ${{ secrets.TRAKT_CLIENT_SECRET }}
+  Parameters__telegram-chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
-    env:
-      PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
-      PORTAINER_API_TOKEN: ${{ secrets.PORTAINER_API_TOKEN }}
-      PORTAINER_ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
-      PORTAINER_STACK_ID: ${{ secrets.PORTAINER_STACK_ID }}
-
-      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
-      TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-      APPHOST_POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-      APPHOST_POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      APPHOST_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      APPHOST_TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
-      APPHOST_TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
-      APPHOST_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-      # Aspire expects parameter values under config keys like Parameters:postgres-user.
-      # In environment variables, ":" maps to "__" in .NET configuration binding.
-      Parameters__postgres-user: ${{ secrets.POSTGRES_USER }}
-      Parameters__postgres-password: ${{ secrets.POSTGRES_PASSWORD }}
-      Parameters__telegram-bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      Parameters__trakt-client-id: ${{ secrets.TRAKT_CLIENT_ID }}
-      Parameters__trakt-client-secret: ${{ secrets.TRAKT_CLIENT_SECRET }}
-      Parameters__telegram-chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
       - name: Check out repository
@@ -129,6 +129,27 @@ jobs:
             encoding="utf-8",
           )
           PY
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aspire-output
+          path: aspire-output/
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: aspire-output
+          path: aspire-output/
 
       - name: Validate Portainer API access
         shell: bash
