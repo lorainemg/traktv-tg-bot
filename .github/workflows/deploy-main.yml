@@ -130,6 +130,53 @@ jobs:
           )
           PY
 
+      - name: Validate Portainer API access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          endpoint = os.environ["PORTAINER_URL"].strip()
+          if not endpoint.startswith(("http://", "https://")):
+            endpoint = f"https://{endpoint}"
+          endpoint = endpoint.rstrip("/")
+
+          token = os.environ["PORTAINER_API_TOKEN"]
+          endpoint_id = os.environ["PORTAINER_ENDPOINT_ID"]
+          stack_id = os.environ["PORTAINER_STACK_ID"]
+          common_headers = {
+            "X-API-Key": token,
+            "User-Agent": "curl/8.6.0",
+            "Accept": "*/*",
+          }
+
+          checks = [
+            ("endpoints", f"{endpoint}/api/endpoints"),
+            ("stack", f"{endpoint}/api/stacks/{stack_id}?{urllib.parse.urlencode({'endpointId': endpoint_id})}"),
+          ]
+
+          for name, url in checks:
+            req = urllib.request.Request(url=url, headers=common_headers)
+            try:
+              with urllib.request.urlopen(req) as response:
+                status = response.getcode()
+                body = response.read().decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as exc:
+              body = exc.read().decode("utf-8", errors="replace")
+              raise SystemExit(
+                f"Portainer preflight failed on {name} check with status {exc.code}. Response: {body[:500]}"
+              ) from exc
+
+            if status < 200 or status >= 300:
+              raise SystemExit(f"Portainer preflight non-success on {name}: {status}. Response: {body[:500]}")
+
+          print("Portainer API preflight checks passed.")
+          PY
+
       - name: Update Portainer stack
         shell: bash
         run: |
@@ -180,6 +227,8 @@ jobs:
             data=json.dumps(payload).encode("utf-8"),
             headers={
               "X-API-Key": token,
+              "User-Agent": "curl/8.6.0",
+              "Accept": "*/*",
               "Content-Type": "application/json",
             },
           )
