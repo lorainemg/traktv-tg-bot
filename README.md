@@ -26,4 +26,4 @@ Required GitHub repository secrets:
 - `TELEGRAM_BOT_TOKEN`
 - `TRAKT_CLIENT_ID`
 - `TRAKT_CLIENT_SECRET`
-- `TELEGRAM_CHAT_ID`
+- `TMDB_API_KEY`

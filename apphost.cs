@@ -26,7 +26,7 @@ var dbName = "trakt";
 var telegramBotToken = builder.AddParameter("telegram-bot-token", secret: true);
 var traktClientId = builder.AddParameter("trakt-client-id");
 var traktClientSecret = builder.AddParameter("trakt-client-secret", secret: true);
-var telegramChatId = builder.AddParameter("telegram-chat-id");
+var tmdbApiKey = builder.AddParameter("tmdb-api-key");
 
 var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
 	.WithImageTag("17-alpine")
@@ -51,7 +51,7 @@ var bot = builder.AddGolangApp("bot", ".", "./cmd/bot")
 	.WithEnvironment("TELEGRAM_BOT_TOKEN", telegramBotToken)
 	.WithEnvironment("TRAKT_CLIENT_ID", traktClientId)
 	.WithEnvironment("TRAKT_CLIENT_SECRET", traktClientSecret)
-	.WithEnvironment("TELEGRAM_CHAT_ID", telegramChatId)
+	.WithEnvironment("TMDB_API_KEY", tmdbApiKey)
 	.WithEnvironment(context =>
 	{
 		var dbUri =database.Resource.GetConnectionProperty("URI");
