@@ -16,7 +16,7 @@ jobs:
       SECRETS_JSON: ${{ toJSON(secrets) }}
 
     steps:
-      - name: Validate required secrets
+      - name: Validate required secrets and add to environment
         shell: bash
         run: |
           set -euo pipefail
@@ -38,6 +38,7 @@ jobs:
               echo "Missing required GitHub secret: ${name}" >&2
               exit 1
             fi
+            echo "${name}=${value}" >> $GITHUB_ENV
           done
 
       - name: Check out repository
@@ -48,7 +49,7 @@ jobs:
       - name: Export secrets for Aspire
         shell: bash
         run: |
-          echo '${{ toJSON(secrets) }}' | jq -r '
+          echo '$SECRETS_JSON' | jq -r '
             to_entries[]
             | select(.key | test("^PORTAINER_|^GITHUB_") | not)
             | "\(.key)=\(.value)",
