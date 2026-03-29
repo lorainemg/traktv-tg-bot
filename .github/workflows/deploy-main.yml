@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
 
@@ -16,7 +17,7 @@ jobs:
       SECRETS_JSON: ${{ toJSON(secrets) }}
 
     steps:
-      - name: Validate required secrets
+      - name: Validate required secrets and add to environment
         shell: bash
         run: |
           set -euo pipefail
@@ -38,6 +39,7 @@ jobs:
               echo "Missing required GitHub secret: ${name}" >&2
               exit 1
             fi
+            echo "${name}=${value}" >> $GITHUB_ENV
           done
 
       - name: Check out repository
@@ -48,7 +50,7 @@ jobs:
       - name: Export secrets for Aspire
         shell: bash
         run: |
-          echo '${{ toJSON(secrets) }}' | jq -r '
+          echo "$SECRETS_JSON" | jq -r '
             to_entries[]
             | select(.key | test("^PORTAINER_|^GITHUB_") | not)
             | "\(.key)=\(.value)",
@@ -74,36 +76,6 @@ jobs:
       - name: Push images and prepare env with Aspire
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: aspire-output
-          path: aspire-output/
-          retention-days: 1
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: read
-
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: aspire-output
-          path: aspire-output/
-
-      - name: Debug - show generated files
-        shell: bash
-        run: |
-          echo "=== .env.production ==="
-          cat aspire-output/.env.production || echo "file not found"
-          echo ""
-          echo "=== docker-compose.yaml ==="
-          cat aspire-output/docker-compose.yaml || echo "file not found"
 
       - name: Deploy to Portainer
         uses: cssnr/portainer-stack-deploy-action@v1
