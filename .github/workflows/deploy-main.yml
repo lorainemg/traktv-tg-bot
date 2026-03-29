@@ -12,7 +12,34 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      SECRETS_JSON: ${{ toJSON(secrets) }}
+
     steps:
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            PORTAINER_API_TOKEN
+            PORTAINER_URL
+            POSTGRES_USER
+            POSTGRES_PASSWORD
+            TELEGRAM_BOT_TOKEN
+            TRAKT_CLIENT_ID
+            TRAKT_CLIENT_SECRET
+            TMDB_API_KEY
+          )
+
+          for name in "${required[@]}"; do
+            value=$(echo "$SECRETS_JSON" | jq -r --arg k "$name" '.[$k] // empty')
+            if [ -z "$value" ]; then
+              echo "Missing required GitHub secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
       - name: Check out repository
         uses: actions/checkout@v4
 
@@ -68,6 +95,15 @@ jobs:
         with:
           name: aspire-output
           path: aspire-output/
+
+      - name: Debug - show generated files
+        shell: bash
+        run: |
+          echo "=== .env.production ==="
+          cat aspire-output/.env.production || echo "file not found"
+          echo ""
+          echo "=== docker-compose.yaml ==="
+          cat aspire-output/docker-compose.yaml || echo "file not found"
 
       - name: Deploy to Portainer
         uses: cssnr/portainer-stack-deploy-action@v1
