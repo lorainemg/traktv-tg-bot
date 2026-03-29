@@ -37,7 +37,11 @@ var bot = builder.AddGolangApp("bot", ".", "./cmd/bot")
 	.WithEnvironment("TRAKT_CLIENT_ID", traktClientId)
 	.WithEnvironment("TRAKT_CLIENT_SECRET", traktClientSecret)
 	.WithEnvironment("TELEGRAM_CHAT_ID", telegramChatId)
-	.WithEnvironment("DATABASE_URL", database.Resource.GetConnectionProperty("URI"))
+	.WithEnvironment(context =>
+	{
+		var dbUri =database.Resource.GetConnectionProperty("URI");
+		context.EnvironmentVariables["DATABASE_URL"] = ReferenceExpression.Create($"{dbUri}?sslmode=disable");
+	})
 	.WithContainerRegistry(registry)
 	.WaitFor(postgres);
 
