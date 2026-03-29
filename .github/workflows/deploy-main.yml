@@ -10,11 +10,6 @@ env:
   # App secret names listed once — used by validation and Parameters__ generation.
   APP_SECRETS: "POSTGRES_USER POSTGRES_PASSWORD TELEGRAM_BOT_TOKEN TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TMDB_API_KEY"
 
-  PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
-  PORTAINER_API_TOKEN: ${{ secrets.PORTAINER_API_TOKEN }}
-  PORTAINER_ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
-  PORTAINER_STACK_ID: ${{ secrets.PORTAINER_STACK_ID }}
-
   POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -37,8 +32,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Validate all required secrets (infra + app)
-          for var in PORTAINER_URL PORTAINER_API_TOKEN PORTAINER_ENDPOINT_ID PORTAINER_STACK_ID $APP_SECRETS; do
+          # Validate app secrets are set (Aspire needs them via Parameters__)
+          for var in $APP_SECRETS; do
             if [ -z "${!var:-}" ]; then
               echo "Missing required GitHub secret: ${var}" >&2
               exit 1
@@ -73,18 +68,6 @@ jobs:
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
 
-      - name: Convert Aspire .env to Portainer JSON format
-        shell: bash
-        run: |
-          set -euo pipefail
-          env_file="aspire-output/.env.production"
-          [ -f "$env_file" ] || env_file="aspire-output/.env"
-
-          # Parse KEY=VALUE lines into Portainer's [{"name": k, "value": v}] format
-          grep -v '^\s*#' "$env_file" | grep '=' | sort \
-            | jq -R 'split("=") | {name: .[0], value: .[1:] | join("=")}' \
-            | jq -s '.' > aspire-output/portainer-stack-env.json
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -106,118 +89,15 @@ jobs:
           name: aspire-output
           path: aspire-output/
 
-      - name: Validate Portainer API access
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import os
-          import urllib.error
-          import urllib.parse
-          import urllib.request
-
-          endpoint = os.environ["PORTAINER_URL"].strip()
-          if not endpoint.startswith(("http://", "https://")):
-            endpoint = f"https://{endpoint}"
-          endpoint = endpoint.rstrip("/")
-
-          token = os.environ["PORTAINER_API_TOKEN"]
-          endpoint_id = os.environ["PORTAINER_ENDPOINT_ID"]
-          stack_id = os.environ["PORTAINER_STACK_ID"]
-          common_headers = {
-            "X-API-Key": token,
-            "User-Agent": "curl/8.6.0",
-            "Accept": "*/*",
-          }
-
-          checks = [
-            ("endpoints", f"{endpoint}/api/endpoints"),
-            ("stack", f"{endpoint}/api/stacks/{stack_id}?{urllib.parse.urlencode({'endpointId': endpoint_id})}"),
-          ]
-
-          for name, url in checks:
-            req = urllib.request.Request(url=url, headers=common_headers)
-            try:
-              with urllib.request.urlopen(req) as response:
-                status = response.getcode()
-                body = response.read().decode("utf-8", errors="replace")
-            except urllib.error.HTTPError as exc:
-              body = exc.read().decode("utf-8", errors="replace")
-              raise SystemExit(
-                f"Portainer preflight failed on {name} check with status {exc.code}. Response: {body[:500]}"
-              ) from exc
-
-            if status < 200 or status >= 300:
-              raise SystemExit(f"Portainer preflight non-success on {name}: {status}. Response: {body[:500]}")
-
-          print("Portainer API preflight checks passed.")
-          PY
-
-      - name: Update Portainer stack
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          compose_file="aspire-output/docker-compose.yaml"
-          env_file_json="aspire-output/portainer-stack-env.json"
-
-          if [ ! -f "$compose_file" ]; then
-            echo "Expected compose file was not generated: $compose_file" >&2
-            exit 1
-          fi
-
-          if [ ! -f "$env_file_json" ]; then
-            echo "Expected env payload was not generated: $env_file_json" >&2
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          import urllib.parse
-          import urllib.request
-          import os
-
-          endpoint = os.environ["PORTAINER_URL"].strip()
-          if not endpoint.startswith(("http://", "https://")):
-            endpoint = f"https://{endpoint}"
-          endpoint = endpoint.rstrip("/")
-          stack_id = os.environ["PORTAINER_STACK_ID"]
-          endpoint_id = os.environ["PORTAINER_ENDPOINT_ID"]
-          token = os.environ["PORTAINER_API_TOKEN"]
-          stack_file_content = Path("aspire-output/docker-compose.yaml").read_text(encoding="utf-8")
-          env_json = Path("aspire-output/portainer-stack-env.json").read_text(encoding="utf-8")
-
-          payload = {
-            "stackFileContent": stack_file_content,
-            "env": json.loads(env_json),
-            "prune": True,
-            "pullImage": True,
-          }
-
-          query = urllib.parse.urlencode({"endpointId": endpoint_id})
-          url = f"{endpoint}/api/stacks/{stack_id}?{query}"
-          req = urllib.request.Request(
-            url=url,
-            method="PUT",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-              "X-API-Key": token,
-              "User-Agent": "curl/8.6.0",
-              "Accept": "*/*",
-              "Content-Type": "application/json",
-            },
-          )
-
-          try:
-            with urllib.request.urlopen(req) as response:
-              code = response.getcode()
-              body = response.read().decode("utf-8")
-          except Exception as exc:
-            raise SystemExit(f"Portainer stack update failed: {exc}") from exc
-
-          if code < 200 or code >= 300:
-            raise SystemExit(f"Portainer stack update returned status {code}: {body}")
-
-          print("Portainer stack updated successfully.")
-          PY
+      - name: Deploy to Portainer
+        uses: cssnr/portainer-stack-deploy-action@v1
+        with:
+          token: ${{ secrets.PORTAINER_API_TOKEN }}
+          url: ${{ secrets.PORTAINER_URL }}
+          endpoint: 3
+          name: trakt-tg-bot
+          file: aspire-output/docker-compose.yaml
+          env_file: aspire-output/.env.production
+          standalone: true
+          pull: true
+          prune: true
