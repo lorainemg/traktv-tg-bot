@@ -36,7 +36,7 @@ var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
 	{
 		service.Healthcheck = new Healthcheck
 		{
-			Test = ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d {dbName}"],
+			Test = ["CMD-SHELL", $"pg_isready -U ${{POSTGRES_USER}} -d {dbName}"],
 			Interval = "2s",
 			Timeout = "5s",
 			Retries = 5,
