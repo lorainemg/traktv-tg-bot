@@ -100,7 +100,7 @@ func formatWatchedByLine(statuses []storage.WatchStatus) string {
 		}
 		usersInfo[i] = fmt.Sprintf("%s %s", status.User.MentionLink(), icon)
 	}
-	return strings.Join(usersInfo, "  ")
+	return fmt.Sprintf("Watched by: %s", strings.Join(usersInfo, "  "))
 }
 
 // formatAirDate parses a Trakt ISO timestamp (UTC) and returns a human-friendly

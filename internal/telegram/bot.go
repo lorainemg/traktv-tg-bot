@@ -241,8 +241,13 @@ func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.
 	}
 }
 
-// watchedEmoji is the reaction emoji that triggers "mark as watched" on Trakt.
-const watchedEmoji = "👀"
+// watchedEmojis is the set of reaction emojis that trigger "mark as watched" on Trakt.
+var watchedEmojis = map[string]bool{
+	"👀": true,
+	"✅": true,
+	"📝": true,
+	"✍️": true,
+}
 
 // handleReaction processes a message reaction update.
 // If a user reacts with 👀 on an episode notification, it submits a task
@@ -256,10 +261,7 @@ func (b *Bot) handleReaction(reaction *models.MessageReactionUpdated) {
 	// Check if any of the new reactions is the "watched" emoji.
 	// NewReaction contains only the reactions that were just added.
 	for _, r := range reaction.NewReaction {
-		if r.Type == models.ReactionTypeTypeEmoji &&
-			r.ReactionTypeEmoji != nil &&
-			r.ReactionTypeEmoji.Emoji == watchedEmoji {
-
+		if b.isWatchedReaction(r) {
 			b.worker.Submit(worker.Task{
 				Type:   worker.TaskMarkWatched,
 				ChatID: reaction.Chat.ID,
@@ -272,4 +274,37 @@ func (b *Bot) handleReaction(reaction *models.MessageReactionUpdated) {
 			return // one reaction is enough, no need to check the rest
 		}
 	}
+}
+
+// isWatchedReaction checks whether a reaction matches the "watched" emoji (👀).
+// Handles both regular emoji (simple string match) and custom/animated emoji
+// (requires an API call to resolve the custom emoji ID to its base emoji character).
+func (b *Bot) isWatchedReaction(r models.ReactionType) bool {
+	switch r.Type {
+	case models.ReactionTypeTypeEmoji:
+		return r.ReactionTypeEmoji != nil && watchedEmojis[r.ReactionTypeEmoji.Emoji]
+
+	case models.ReactionTypeTypeCustomEmoji:
+		if r.ReactionTypeCustomEmoji == nil {
+			return false
+		}
+		return watchedEmojis[b.resolveCustomEmoji(r.ReactionTypeCustomEmoji.CustomEmojiID)]
+	}
+	return false
+}
+
+// resolveCustomEmoji calls the Telegram API to look up a custom emoji's base
+// emoji character. Returns an empty string if the lookup fails.
+func (b *Bot) resolveCustomEmoji(customEmojiID string) string {
+	stickers, err := b.bot.GetCustomEmojiStickers(context.Background(), &bot.GetCustomEmojiStickersParams{
+		CustomEmojiIDs: []string{customEmojiID},
+	})
+	if err != nil {
+		fmt.Println("Error resolving custom emoji:", err)
+		return ""
+	}
+	if len(stickers) == 0 {
+		return ""
+	}
+	return stickers[0].Emoji
 }
