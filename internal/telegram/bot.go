@@ -59,8 +59,15 @@ func (b *Bot) Start(ctx context.Context) {
 	b.bot.Start(ctx)
 }
 
-// SendResultsMessage sends a message or photo to a Telegram chat based on the provided result and invokes the OnSent callback.
+// SendResultsMessage sends or edits a Telegram message based on the Result.
+// If EditMessageID is set, it edits that existing message; otherwise it sends a new one.
 func (b *Bot) SendResultsMessage(result worker.Result) {
+	// Edit an existing message — used when updating the "Watched by" line
+	if result.EditMessageID != 0 {
+		b.editResultsMessage(result)
+		return
+	}
+
 	// Build link preview options based on whether we have a photo
 	var preview *models.LinkPreviewOptions
 	if result.PhotoURL != "" {
@@ -91,6 +98,31 @@ func (b *Bot) SendResultsMessage(result worker.Result) {
 		if err := result.OnSent(msg.ID); err != nil {
 			fmt.Println("Error in OnSent callback:", err)
 		}
+	}
+}
+
+// editResultsMessage edits an existing Telegram message with new text.
+// Used to update the "Watched by" status line on episode notifications.
+func (b *Bot) editResultsMessage(result worker.Result) {
+	// Preserve the original thumbnail by passing the same PhotoURL
+	var preview *models.LinkPreviewOptions
+	if result.PhotoURL != "" {
+		preview = &models.LinkPreviewOptions{
+			URL:              &result.PhotoURL,
+			PreferLargeMedia: bot.False(),
+			ShowAboveText:    bot.True(),
+		}
+	}
+
+	_, err := b.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+		ChatID:             result.ChatID,
+		MessageID:          result.EditMessageID,
+		Text:               result.Text,
+		ParseMode:          models.ParseModeMarkdownV1,
+		LinkPreviewOptions: preview,
+	})
+	if err != nil {
+		fmt.Println("Error editing message:", err)
 	}
 }
 

@@ -24,7 +24,7 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 
 	// AutoMigrate creates or updates the table schema to match the struct.
 	// It will NOT delete unused columns — only add new ones or modify existing ones.
-	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}, &WatchStatus{}); err != nil {
 		return nil, fmt.Errorf("running auto-migration: %w", err)
 	}
 
@@ -212,4 +212,48 @@ func (s *PostgresStore) GetUsersByChatID(chatID int64) ([]User, error) {
 		return nil, fmt.Errorf("fetching users for chat ID %d: %w", chatID, result.Error)
 	}
 	return users, nil
+}
+
+// CreateWatchStatuses bulk-inserts WatchStatus rows for a notification — one per user.
+// All start with Watched=false (⏳). Uses a slice of user IDs rather than full User
+// structs because that's all the caller needs to pass. The loop builds a []WatchStatus
+// slice, then Create() inserts them all in a single SQL INSERT.
+func (s *PostgresStore) CreateWatchStatuses(notificationID uint, userIDs []uint) error {
+	statuses := make([]WatchStatus, len(userIDs))
+	for i, uid := range userIDs {
+		statuses[i] = WatchStatus{
+			NotificationID: notificationID,
+			UserID:         uid,
+			Watched:        false,
+		}
+	}
+	if err := s.db.Create(&statuses).Error; err != nil {
+		return fmt.Errorf("creating watch statuses for notification %d: %w", notificationID, err)
+	}
+	return nil
+}
+
+// GetWatchStatuses returns all WatchStatus rows for a notification, with each
+// row's User pre-loaded so callers can access usernames/names for display.
+// Preload("User") tells GORM to run a second query to fill the User field —
+// similar to SQLAlchemy's joinedload() or Entity Framework's Include().
+func (s *PostgresStore) GetWatchStatuses(notificationID uint) ([]WatchStatus, error) {
+	var statuses []WatchStatus
+	err := s.db.Preload("User").Where("notification_id = ?", notificationID).Find(&statuses).Error
+	if err != nil {
+		return nil, fmt.Errorf("fetching watch statuses for notification %d: %w", notificationID, err)
+	}
+	return statuses, nil
+}
+
+// MarkWatchStatus sets Watched=true for a specific user on a specific notification.
+// Uses GORM's Update with a Where clause targeting both foreign keys.
+func (s *PostgresStore) MarkWatchStatus(notificationID uint, userID uint) error {
+	result := s.db.Model(&WatchStatus{}).
+		Where("notification_id = ? AND user_id = ?", notificationID, userID).
+		Update("watched", true)
+	if result.Error != nil {
+		return fmt.Errorf("marking watch status for notification %d, user %d: %w", notificationID, userID, result.Error)
+	}
+	return nil
 }

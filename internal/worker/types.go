@@ -31,6 +31,10 @@ type Result struct {
 	Text     string
 	PhotoURL string // if set, message is sent as a photo with Text as caption
 	OnSent   func(messageID int) error
+
+	// EditMessageID, when non-zero, tells the bot to edit an existing message
+	// instead of sending a new one. Zero value (default) means "send new message".
+	EditMessageID int
 }
 
 // AuthPayload carries the data needed to start the Trakt OAuth device flow.

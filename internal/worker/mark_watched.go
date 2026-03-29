@@ -1,9 +1,14 @@
 package worker
 
-import "fmt"
+import (
+	"fmt"
 
-// handleMarkWatched looks up which episode a user reacted to, then marks it
-// as watched on their Trakt account.
+	"github.com/loraine/traktv-tg-bot/internal/storage"
+)
+
+// handleMarkWatched looks up which episode a user reacted to, marks it as
+// watched on their Trakt account, and edits the original notification message
+// to update the "Watched by" status line.
 func (w *Worker) handleMarkWatched(task Task) {
 	payload, ok := task.Payload.(MarkWatchedPayload)
 	if !ok {
@@ -11,34 +16,56 @@ func (w *Worker) handleMarkWatched(task Task) {
 		return
 	}
 
-	// Step 1: find the notification record by the Telegram message the user reacted to
-	notification, err := w.store.GetNotificationByMessageID(payload.TelegramMessageID)
-	if err != nil {
-		fmt.Println("Error looking up notification:", err)
-		return
-	}
+	notification := w.resolveNotification(payload.TelegramMessageID)
 	if notification == nil {
-		// Reaction was on a message we don't track — silently ignore
 		return
 	}
 
-	// Step 2: find the user's Trakt token by their Telegram ID
+	user := w.resolveWatchUser(payload)
+	if user == nil {
+		return
+	}
+
+	if !w.markOnTrakt(user, notification, payload.ChatID) {
+		return
+	}
+
+	w.updateNotificationMessage(notification, user.ID, payload.ChatID)
+}
+
+// resolveNotification looks up a notification by Telegram message ID.
+// Returns nil if not found (reaction on a message we don't track) or on error.
+func (w *Worker) resolveNotification(messageID int) *storage.Notification {
+	notification, err := w.store.GetNotificationByMessageID(messageID)
+	if err != nil {
+		fmt.Println("Error looking up notification:", err)
+		return nil
+	}
+	return notification
+}
+
+// resolveWatchUser looks up the reacting user and validates they have a Trakt account.
+// Sends an auth prompt if the user hasn't linked their account yet.
+func (w *Worker) resolveWatchUser(payload MarkWatchedPayload) *storage.User {
 	user, err := w.store.GetUserByTelegramID(payload.TelegramID)
 	if err != nil {
 		fmt.Println("Error looking up user:", err)
-		return
+		return nil
 	}
 	if user == nil {
-		// User hasn't linked their Trakt account — let them know
 		w.results <- Result{
 			ChatID: payload.ChatID,
 			Text:   "You need to link your Trakt account first. Use /auth to get started.",
 		}
-		return
+		return nil
 	}
+	return user
+}
 
-	// Step 3: mark the episode as watched on Trakt
-	err = w.trakt.MarkEpisodeWatched(
+// markOnTrakt calls the Trakt API to mark an episode as watched.
+// Returns false on failure and sends an error message to the chat.
+func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notification, chatID int64) bool {
+	err := w.trakt.MarkEpisodeWatched(
 		user.TraktAccessToken,
 		notification.TraktShowID,
 		notification.Season,
@@ -47,17 +74,37 @@ func (w *Worker) handleMarkWatched(task Task) {
 	if err != nil {
 		fmt.Println("Error marking episode as watched:", err)
 		w.results <- Result{
-			ChatID: payload.ChatID,
+			ChatID: chatID,
 			Text:   fmt.Sprintf("Failed to mark %s %s as watched.", notification.ShowTitle, notification.EpisodeKey()),
 		}
+		return false
+	}
+	return true
+}
+
+// updateNotificationMessage marks a user's watch status in the DB, rebuilds the
+// notification text with the updated "Watched by" line, and edits the Telegram message.
+func (w *Worker) updateNotificationMessage(notification *storage.Notification, userID uint, chatID int64) {
+	if err := w.store.MarkWatchStatus(notification.ID, userID); err != nil {
+		fmt.Println("Error updating watch status:", err)
 		return
 	}
 
+	statuses, err := w.store.GetWatchStatuses(notification.ID)
+	if err != nil {
+		fmt.Println("Error fetching watch statuses:", err)
+		return
+	}
+
+	msg := formatNotificationMessage(notification)
+	if len(statuses) > 0 {
+		msg += "\n\n" + formatWatchedByLine(statuses)
+	}
+
 	w.results <- Result{
-		ChatID: payload.ChatID,
-		Text: fmt.Sprintf(
-			"%s marked *%s* %s as watched ✅",
-			user.MentionLink(), notification.ShowTitle, notification.EpisodeKey(),
-		),
+		ChatID:        chatID,
+		Text:          msg,
+		PhotoURL:      notification.PhotoURL,
+		EditMessageID: notification.TelegramMessageID,
 	}
 }

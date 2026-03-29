@@ -20,4 +20,9 @@ GetUserByTelegramID(telegramID int64) (*User, error)
 	UpdateUserMuted(telegramID int64, muted bool) error
 	GetDistinctChatIDs() ([]int64, error)
 	GetUsersByChatID(chatID int64) ([]User, error)
+
+	// WatchStatus methods — track per-user watched state on episode notifications
+	CreateWatchStatuses(notificationID uint, userIDs []uint) error
+	GetWatchStatuses(notificationID uint) ([]WatchStatus, error)
+	MarkWatchStatus(notificationID uint, userID uint) error
 }
