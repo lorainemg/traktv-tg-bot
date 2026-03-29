@@ -7,6 +7,11 @@ on:
   workflow_dispatch:
 
 env:
+  # Single source of truth: to add a new app secret, add it here and to the
+  # YAML secret bindings below. Everything else (validation, APPHOST_ aliases,
+  # Parameters__ aliases, Portainer env payload) derives from this list.
+  APP_SECRETS: "POSTGRES_USER POSTGRES_PASSWORD TELEGRAM_BOT_TOKEN TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TMDB_API_KEY"
+
   PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
   PORTAINER_API_TOKEN: ${{ secrets.PORTAINER_API_TOKEN }}
   PORTAINER_ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
@@ -17,23 +22,7 @@ env:
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
   TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-  APPHOST_POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-  APPHOST_POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  APPHOST_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  APPHOST_TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
-  APPHOST_TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
-  APPHOST_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-  # Aspire expects parameter values under config keys like Parameters:postgres-user.
-  # In environment variables, ":" maps to "__" in .NET configuration binding.
-  Parameters__postgres-user: ${{ secrets.POSTGRES_USER }}
-  Parameters__postgres-password: ${{ secrets.POSTGRES_PASSWORD }}
-  Parameters__telegram-bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  Parameters__trakt-client-id: ${{ secrets.TRAKT_CLIENT_ID }}
-  Parameters__trakt-client-secret: ${{ secrets.TRAKT_CLIENT_SECRET }}
-  Parameters__telegram-chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+  TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
 
 jobs:
   build:
@@ -45,29 +34,26 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate required secrets
+      - name: Validate secrets and export Aspire env aliases
         shell: bash
         run: |
           set -euo pipefail
 
-          required_vars=(
-            PORTAINER_URL
-            PORTAINER_API_TOKEN
-            PORTAINER_ENDPOINT_ID
-            PORTAINER_STACK_ID
-            POSTGRES_USER
-            POSTGRES_PASSWORD
-            TELEGRAM_BOT_TOKEN
-            TRAKT_CLIENT_ID
-            TRAKT_CLIENT_SECRET
-            TELEGRAM_CHAT_ID
-          )
-
-          for var_name in "${required_vars[@]}"; do
-            if [ -z "${!var_name:-}" ]; then
-              echo "Missing required GitHub secret: ${var_name}" >&2
+          # Validate all required secrets (infra + app)
+          for var in PORTAINER_URL PORTAINER_API_TOKEN PORTAINER_ENDPOINT_ID PORTAINER_STACK_ID $APP_SECRETS; do
+            if [ -z "${!var:-}" ]; then
+              echo "Missing required GitHub secret: ${var}" >&2
               exit 1
             fi
+          done
+
+          # Generate APPHOST_ and Parameters__ aliases from APP_SECRETS.
+          # Aspire needs both formats for .NET configuration binding.
+          # Kebab-case is derived automatically: TRAKT_CLIENT_ID -> trakt-client-id
+          for var in $APP_SECRETS; do
+            kebab=$(echo "$var" | tr '[:upper:]_' '[:lower:]-')
+            echo "APPHOST_${var}=${!var}" >> "$GITHUB_ENV"
+            echo "Parameters__${kebab}=${!var}" >> "$GITHUB_ENV"
           done
 
       - name: Set up .NET
@@ -114,12 +100,8 @@ jobs:
               key, value = line.split("=", 1)
               env_map[key] = value
 
-          env_map["POSTGRES_USER"] = os.environ["POSTGRES_USER"]
-          env_map["POSTGRES_PASSWORD"] = os.environ["POSTGRES_PASSWORD"]
-          env_map["TELEGRAM_BOT_TOKEN"] = os.environ["TELEGRAM_BOT_TOKEN"]
-          env_map["TRAKT_CLIENT_ID"] = os.environ["TRAKT_CLIENT_ID"]
-          env_map["TRAKT_CLIENT_SECRET"] = os.environ["TRAKT_CLIENT_SECRET"]
-          env_map["TELEGRAM_CHAT_ID"] = os.environ["TELEGRAM_CHAT_ID"]
+          for key in os.environ["APP_SECRETS"].split():
+            env_map[key] = os.environ[key]
 
           stack_env = [{"name": k, "value": v} for k, v in sorted(env_map.items())]
 
