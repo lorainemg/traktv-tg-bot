@@ -3,9 +3,11 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // PostgresStore is the concrete implementation of Service using GORM + PostgreSQL.
@@ -17,7 +19,13 @@ type PostgresStore struct {
 // Connect opens a GORM connection to PostgreSQL, runs auto-migration,
 // and returns a *PostgresStore that satisfies the Service interface.
 func Connect(databaseURL string) (*PostgresStore, error) {
-	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{
+		// Suppress "record not found" warnings — these are expected when checking
+		// if a record exists (e.g. HasNotification, GetUserByTelegramID).
+		Logger: logger.New(log.Default(), logger.Config{
+			IgnoreRecordNotFoundError: true,
+		}),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("connecting to database: %w", err)
 	}
@@ -47,6 +55,19 @@ func (s *PostgresStore) GetUserByTelegramID(telegramID int64) (*User, error) {
 		return nil, fmt.Errorf("fetching user by telegram ID %d: %w", telegramID, err)
 	}
 	return &user, nil
+}
+
+// GetNotificationByID looks up a notification by its database primary key.
+func (s *PostgresStore) GetNotificationByID(id uint) (*Notification, error) {
+	var notification Notification
+	err := s.db.First(&notification, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching notification by ID %d: %w", id, err)
+	}
+	return &notification, nil
 }
 
 func (s *PostgresStore) GetNotificationByMessageID(messageID int) (*Notification, error) {

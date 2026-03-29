@@ -131,10 +131,11 @@ func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []
 
 	// Send the message to the results channel for Telegram delivery
 	w.results <- Result{
-		ChatID:   chatID,
-		ThreadID: threadID,
-		Text:     msg,
-		PhotoURL: notification.PhotoURL,
+		ChatID:        chatID,
+		ThreadID:      threadID,
+		Text:          msg,
+		PhotoURL:      notification.PhotoURL,
+		InlineButtons: watchedButton(notification.ID),
 		OnSent: func(messageID int) error {
 			return w.store.UpdateNotificationMessageID(notification.ID, messageID)
 		},

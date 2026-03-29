@@ -6,6 +6,7 @@ package storage
 // no "implements" keyword needed (this is called "structural typing").
 type Service interface {
 GetUserByTelegramID(telegramID int64) (*User, error)
+	GetNotificationByID(id uint) (*Notification, error)
 	GetNotificationByMessageID(messageID int) (*Notification, error)
 	CreateUser(user *User) error
 	CreateOrUpdateUser(user *User) error

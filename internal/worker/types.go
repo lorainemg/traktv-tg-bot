@@ -23,6 +23,13 @@ type Task struct {
 	Payload any   // extra data, varies by task type (like interface{} — accepts any value)
 }
 
+// InlineButton describes a single inline keyboard button.
+// The worker builds these; the telegram package converts them to Telegram API types.
+type InlineButton struct {
+	Text         string // label shown on the button
+	CallbackData string // hidden payload sent back when the button is clicked (max 64 bytes)
+}
+
 // Result represents a message the worker wants delivered via Telegram.
 // The worker never talks to Telegram directly — it puts Results on a channel,
 // and the Telegram side reads and sends them.
@@ -36,6 +43,10 @@ type Result struct {
 	// EditMessageID, when non-zero, tells the bot to edit an existing message
 	// instead of sending a new one. Zero value (default) means "send new message".
 	EditMessageID int
+
+	// InlineButtons is a 2D slice: each inner slice is one row of buttons.
+	// nil means no keyboard attached.
+	InlineButtons [][]InlineButton
 }
 
 // AuthPayload carries the data needed to start the Trakt OAuth device flow.
@@ -61,9 +72,9 @@ type TopicPayload struct {
 }
 
 // MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.
-// The worker looks up the episode details from the Notification via TelegramMessageID.
+// NotificationID comes directly from the inline button's callback data.
 type MarkWatchedPayload struct {
-	TelegramID        int64 // the user who reacted — used to find their Trakt token
-	ChatID            int64 // where to send the confirmation message
-	TelegramMessageID int   // the notification message — used to find which episode
+	TelegramID     int64 // the user who clicked — used to find their Trakt token
+	ChatID         int64 // where to send the confirmation message
+	NotificationID uint  // DB ID of the notification — used to find which episode
 }

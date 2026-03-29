@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-telegram/bot"
@@ -28,10 +29,10 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	opts := []bot.Option{
 		bot.WithDefaultHandler(b.handleDefault),
 		// By default, Telegram only sends message updates. We need to explicitly
-		// request message_reaction updates so the bot receives emoji reactions.
+		// request callback_query updates so the bot receives inline button clicks.
 		bot.WithAllowedUpdates(bot.AllowedUpdates{
 			"message",
-			"message_reaction",
+			"callback_query",
 		}),
 	}
 
@@ -81,13 +82,20 @@ func (b *Bot) SendResultsMessage(result worker.Result) {
 			IsDisabled: bot.True(),
 		}
 	}
-	msg, err := b.bot.SendMessage(context.Background(), &bot.SendMessageParams{
+	params := &bot.SendMessageParams{
 		ChatID:             result.ChatID,
 		MessageThreadID:    result.ThreadID, // 0 sends to General/default topic
 		Text:               result.Text,
 		ParseMode:          models.ParseModeMarkdownV1,
 		LinkPreviewOptions: preview,
-	})
+	}
+	// Only set ReplyMarkup when we have buttons — a nil *InlineKeyboardMarkup
+	// assigned to the ReplyMarkup interface field is non-nil in Go, which causes
+	// Telegram to reject the request with "object expected as reply markup".
+	if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
+		params.ReplyMarkup = kb
+	}
+	msg, err := b.bot.SendMessage(context.Background(), params)
 	if err != nil {
 		fmt.Println("Error sending message:", err)
 		return
@@ -114,14 +122,23 @@ func (b *Bot) editResultsMessage(result worker.Result) {
 		}
 	}
 
-	_, err := b.bot.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+	editParams := &bot.EditMessageTextParams{
 		ChatID:             result.ChatID,
 		MessageID:          result.EditMessageID,
 		Text:               result.Text,
 		ParseMode:          models.ParseModeMarkdownV1,
 		LinkPreviewOptions: preview,
-	})
+	}
+	if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
+		editParams.ReplyMarkup = kb
+	}
+	_, err := b.bot.EditMessageText(context.Background(), editParams)
 	if err != nil {
+		// Telegram rejects edits when the content hasn't changed — this is expected
+		// when a user clicks the button but was already marked as watched.
+		if strings.Contains(err.Error(), "message is not modified") {
+			return
+		}
 		fmt.Println("Error editing message:", err)
 	}
 }
@@ -232,79 +249,59 @@ func (b *Bot) handleUnmute(ctx context.Context, tgBot *bot.Bot, update *models.U
 	})
 }
 
+// buildInlineKeyboard converts our simple InlineButton slices into Telegram's
+// InlineKeyboardMarkup type. Returns nil if there are no buttons, which means
+// "no keyboard" — Telegram will either not show one (new message) or remove an
+// existing one (edit).
+func buildInlineKeyboard(buttons [][]worker.InlineButton) *models.InlineKeyboardMarkup {
+	if len(buttons) == 0 {
+		return nil
+	}
+	rows := make([][]models.InlineKeyboardButton, len(buttons))
+	for i, row := range buttons {
+		rows[i] = make([]models.InlineKeyboardButton, len(row))
+		for j, btn := range row {
+			rows[i][j] = models.InlineKeyboardButton{
+				Text:         btn.Text,
+				CallbackData: btn.CallbackData,
+			}
+		}
+	}
+	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
 // handleDefault receives all updates not matched by a specific handler.
-// We use it to catch message reactions, since the library has no dedicated
-// HandlerType for reactions.
+// We use it to catch callback queries (inline button clicks), since the
+// library has no dedicated HandlerType for them.
 func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
-	if update.MessageReaction != nil {
-		b.handleReaction(update.MessageReaction)
+	if update.CallbackQuery != nil {
+		b.handleCallbackQuery(ctx, update.CallbackQuery)
 	}
 }
 
-// watchedEmojis is the set of reaction emojis that trigger "mark as watched" on Trakt.
-var watchedEmojis = map[string]bool{
-	"👀": true,
-	"✅": true,
-	"📝": true,
-	"✍️": true,
-}
-
-// handleReaction processes a message reaction update.
-// If a user reacts with 👀 on an episode notification, it submits a task
-// to mark that episode as watched on the user's Trakt account.
-func (b *Bot) handleReaction(reaction *models.MessageReactionUpdated) {
-	// Only process reactions from users (not channels/anonymous)
-	if reaction.User == nil {
-		return
-	}
-
-	// Check if any of the new reactions is the "watched" emoji.
-	// NewReaction contains only the reactions that were just added.
-	for _, r := range reaction.NewReaction {
-		if b.isWatchedReaction(r) {
-			b.worker.Submit(worker.Task{
-				Type:   worker.TaskMarkWatched,
-				ChatID: reaction.Chat.ID,
-				Payload: worker.MarkWatchedPayload{
-					TelegramID:        reaction.User.ID,
-					ChatID:            reaction.Chat.ID,
-					TelegramMessageID: reaction.MessageID,
-				},
-			})
-			return // one reaction is enough, no need to check the rest
+// handleCallbackQuery processes an inline button click.
+// It parses the callback data, submits a task to the worker, and answers
+// the callback query so Telegram removes the loading spinner.
+func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery) {
+	if strings.HasPrefix(cq.Data, "watched:") {
+		notificationID, err := strconv.ParseUint(strings.TrimPrefix(cq.Data, "watched:"), 10, 64)
+		if err != nil {
+			return
+		}
+		b.worker.Submit(worker.Task{
+			Type:   worker.TaskMarkWatched,
+			ChatID: cq.Message.Message.Chat.ID,
+			Payload: worker.MarkWatchedPayload{
+				TelegramID:     cq.From.ID,
+				ChatID:         cq.Message.Message.Chat.ID,
+				NotificationID: uint(notificationID),
+			},
+		})
+		_, err = b.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{ShowAlert: false, Text: "Marking as watched...", CallbackQueryID: cq.ID})
+		if err != nil {
+			println("Error answering callback query:", err)
+			return
 		}
 	}
 }
 
-// isWatchedReaction checks whether a reaction matches the "watched" emoji (👀).
-// Handles both regular emoji (simple string match) and custom/animated emoji
-// (requires an API call to resolve the custom emoji ID to its base emoji character).
-func (b *Bot) isWatchedReaction(r models.ReactionType) bool {
-	switch r.Type {
-	case models.ReactionTypeTypeEmoji:
-		return r.ReactionTypeEmoji != nil && watchedEmojis[r.ReactionTypeEmoji.Emoji]
-
-	case models.ReactionTypeTypeCustomEmoji:
-		if r.ReactionTypeCustomEmoji == nil {
-			return false
-		}
-		return watchedEmojis[b.resolveCustomEmoji(r.ReactionTypeCustomEmoji.CustomEmojiID)]
-	}
-	return false
-}
-
-// resolveCustomEmoji calls the Telegram API to look up a custom emoji's base
-// emoji character. Returns an empty string if the lookup fails.
-func (b *Bot) resolveCustomEmoji(customEmojiID string) string {
-	stickers, err := b.bot.GetCustomEmojiStickers(context.Background(), &bot.GetCustomEmojiStickersParams{
-		CustomEmojiIDs: []string{customEmojiID},
-	})
-	if err != nil {
-		fmt.Println("Error resolving custom emoji:", err)
-		return ""
-	}
-	if len(stickers) == 0 {
-		return ""
-	}
-	return stickers[0].Emoji
-}

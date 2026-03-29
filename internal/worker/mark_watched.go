@@ -16,7 +16,11 @@ func (w *Worker) handleMarkWatched(task Task) {
 		return
 	}
 
-	notification := w.resolveNotification(payload.TelegramMessageID)
+	notification, err := w.store.GetNotificationByID(payload.NotificationID)
+	if err != nil {
+		fmt.Println("Error looking up notification:", err)
+		return
+	}
 	if notification == nil {
 		return
 	}
@@ -31,17 +35,6 @@ func (w *Worker) handleMarkWatched(task Task) {
 	}
 
 	w.updateNotificationMessage(notification, user.ID, payload.ChatID)
-}
-
-// resolveNotification looks up a notification by Telegram message ID.
-// Returns nil if not found (reaction on a message we don't track) or on error.
-func (w *Worker) resolveNotification(messageID int) *storage.Notification {
-	notification, err := w.store.GetNotificationByMessageID(messageID)
-	if err != nil {
-		fmt.Println("Error looking up notification:", err)
-		return nil
-	}
-	return notification
 }
 
 // resolveWatchUser looks up the reacting user and validates they have a Trakt account.
@@ -106,5 +99,6 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 		Text:          msg,
 		PhotoURL:      notification.PhotoURL,
 		EditMessageID: notification.TelegramMessageID,
+		InlineButtons: watchedButton(notification.ID),
 	}
 }

@@ -120,3 +120,17 @@ func formatAirDate(isoDate string) string {
 func episodeKey(traktId, season, episodeNumber int) string {
 	return fmt.Sprintf("%d-%02d-%02d", traktId, season, episodeNumber)
 }
+
+// watchedButton builds a one-row inline keyboard with a "Mark as Watched" button.
+// The callback data encodes the notification DB ID so the worker knows which episode
+// was clicked. Format: "watched:<id>" — e.g. "watched:42".
+func watchedButton(notificationID uint) [][]InlineButton {
+	return [][]InlineButton{
+		{
+			{
+				Text:         "✅ Mark as Watched",
+				CallbackData: fmt.Sprintf("watched:%d", notificationID),
+			},
+		},
+	}
+}
