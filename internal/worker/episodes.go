@@ -10,84 +10,90 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
 )
 
-// handleCheckEpisodes fetches all linked users and checks each one for new episodes.
+// handleCheckEpisodes fetches all active chats and checks each one for new episodes.
+// It iterates per chat (not per user) because notifications are scoped to chats —
+// one notification per episode per chat, regardless of how many users follow the show.
 func (w *Worker) handleCheckEpisodes(task Task) {
 	fmt.Println("Checking for new episodes...")
 
-	users, err := w.store.GetAllUsers()
+	chatIDs, err := w.store.GetDistinctChatIDs()
 	if err != nil {
-		fmt.Println("Error fetching users:", err)
+		fmt.Println("Error fetching chat IDs:", err)
 		return
 	}
 
 	today := time.Now().Format("2006-01-02")
 
-	for _, user := range users {
-		if user.Muted {
-			continue // skip users who opted out of notifications
+	for _, chatID := range chatIDs {
+		users, err := w.store.GetUsersByChatID(chatID)
+		if err != nil {
+			fmt.Printf("Error fetching users for chat %d: %v\n", chatID, err)
+			continue // non-fatal — skip this chat and try the next one
 		}
-		w.checkUserEpisodes(user, today)
+		w.checkChatEpisodes(chatID, users, today)
 	}
 }
 
-// checkUserEpisodes fetches today's calendar for a single user
-// and processes each episode entry. Notifications go to user.ChatID —
-// the chat where the user authenticated.
-func (w *Worker) checkUserEpisodes(user storage.User, day string) {
-	// TODO(test): hardcoded Daredevil: Born Again S02E01 — remove after testing reaction feature
-	entries := []trakt.CalendarEntry{
-		{
-			FirstAired: "2026-03-28T02:00:00.000Z",
-			Episode:    trakt.Episode{Season: 2, Number: 1, Title: "Test Episode"},
-			Show: trakt.Show{
-				Title:   "Daredevil: Born Again",
-				Genres:  []string{"superhero", "drama", "crime", "action"},
-				IDs:     trakt.ShowIDs{Trakt: 195845, Slug: "daredevil-born-again", IMDB: "tt18923754", TMDB: 202555, TVDB: 422712},
-				Rating:  7.8,
-				Runtime: 53,
-				Images:  trakt.ShowImages{Thumb: []string{"media.trakt.tv/images/shows/000/195/845/thumbs/medium/66e362de13.jpg.webp"}},
-			},
-		},
-	}
-	fmt.Printf("Found %d episodes for user %d\n", len(entries), user.ID)
-
-	// Fetch the user's watchlist so we can skip shows they haven't started watching
-	watchlist, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
-	if err != nil {
-		fmt.Println("Error fetching watchlist:", err)
-		// Non-fatal — proceed without filtering
-		watchlist = nil
-	}
-
-	// Fetch registered forum topics for this chat once — avoids hitting
-	// the database on every episode in the loop.
-	topics, err := w.store.GetTopics(user.ChatID)
+// checkChatEpisodes collects episodes from all users in a chat, deduplicates them,
+// and sends one notification per unique episode. Topics and watch providers are
+// fetched once per chat rather than per user.
+func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day string) {
+	// Fetch registered forum topics once for the whole chat
+	topics, err := w.store.GetTopics(chatID)
 	if err != nil {
 		fmt.Println("Error fetching topics:", err)
 		// Non-fatal — notifications will go to General
 		topics = nil
 	}
 
-	for _, entry := range entries {
-		// Skip shows that are only on the watchlist (not actually watched)
-		if watchlist != nil && watchlist[entry.Show.IDs.Trakt] {
-			fmt.Printf("Skipping %s — on watchlist only\n", entry.Show.Title)
-			continue
-		}
+	episodes := w.collectChatEpisodes(users, day)
 
-		// Fetch watch providers for this show using its TMDB ID.
-		// We pass "US" as default — could be made configurable per user later.
+	fmt.Printf("Found %d unique episodes for chat %d\n", len(episodes), chatID)
+
+	// Send a notification for each unique episode
+	for _, entry := range episodes {
 		var watchInfo *tmdb.WatchInfo
 		if entry.Show.IDs.TMDB != 0 {
 			watchInfo, err = w.tmdb.GetWatchProviders(entry.Show.IDs.TMDB, "US")
 			if err != nil {
 				fmt.Printf("Error fetching watch providers for %s: %v\n", entry.Show.Title, err)
-				// Non-fatal — we still send the notification, just without providers
 			}
 		}
-
-		w.notifyEpisode(entry, user.ChatID, topics, watchInfo)
+		w.notifyEpisode(entry, chatID, topics, watchInfo)
 	}
+}
+
+// collectChatEpisodes fetches calendar entries from every user and merges them
+// into a single deduplicated map. The map key "ShowTitle-S02E01" ensures each
+// episode appears only once even if multiple users follow the same show.
+func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[string]trakt.CalendarEntry {
+	episodes := make(map[string]trakt.CalendarEntry)
+
+	for _, user := range users {
+		watchlistShows, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
+		if err != nil {
+			fmt.Printf("Error fetching watchlist for user %d: %v\n", user.ID, err)
+			// Non-fatal — proceed without filtering (nil map reads return zero values safely)
+			watchlistShows = nil
+		}
+
+		entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 5)
+		if err != nil {
+			fmt.Printf("Error fetching calendar for user %d: %v\n", user.ID, err)
+			continue
+		}
+
+		for _, entry := range entries {
+			// Skip shows that are only on the watchlist (not actually being watched)
+			if watchlistShows[entry.Show.IDs.Trakt] {
+				continue
+			}
+			key := fmt.Sprintf("%s-S%02dE%02d", entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
+			episodes[key] = entry
+		}
+	}
+
+	return episodes
 }
 
 // notifyEpisode checks if an episode was already notified, and if not,

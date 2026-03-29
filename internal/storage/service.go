@@ -5,8 +5,7 @@ package storage
 // Any struct whose methods match this list satisfies the interface automatically —
 // no "implements" keyword needed (this is called "structural typing").
 type Service interface {
-	GetAllUsers() ([]User, error)
-	GetUserByTelegramID(telegramID int64) (*User, error)
+GetUserByTelegramID(telegramID int64) (*User, error)
 	GetNotificationByMessageID(messageID int) (*Notification, error)
 	CreateUser(user *User) error
 	CreateOrUpdateUser(user *User) error
@@ -19,4 +18,6 @@ type Service interface {
 	GetTopics(chatID int64) ([]Topic, error)
 	CreateOrUpdateTopic(topic *Topic) error
 	UpdateUserMuted(telegramID int64, muted bool) error
+	GetDistinctChatIDs() ([]int64, error)
+	GetUsersByChatID(chatID int64) ([]User, error)
 }

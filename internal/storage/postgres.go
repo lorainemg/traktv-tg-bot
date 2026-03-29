@@ -33,17 +33,6 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 	return &PostgresStore{db: db}, nil
 }
 
-// GetAllUsers returns every user in the database.
-// db.Find populates the slice and returns a *gorm.DB result —
-// we check result.Error to see if anything went wrong.
-func (s *PostgresStore) GetAllUsers() ([]User, error) {
-	var users []User
-	result := s.db.Find(&users)
-	if result.Error != nil {
-		return nil, fmt.Errorf("fetching all users: %w", result.Error)
-	}
-	return users, nil
-}
 
 // GetUserByTelegramID looks up a user by their Telegram ID.
 // Returns (nil, nil) if the user doesn't exist — the caller checks for nil
@@ -199,4 +188,28 @@ func (s *PostgresStore) UpdateUserMuted(telegramID int64, muted bool) error {
 		return fmt.Errorf("updating muted status for user %d: %w", telegramID, result.Error)
 	}
 	return nil
+}
+
+// GetDistinctChatIDs returns the unique chat IDs that have at least one active
+// (non-muted) user. Used to drive per-chat episode checking instead of per-user.
+// Model(&User{}) targets the users table, Distinct+Pluck extracts a flat []int64
+// rather than full User structs — like SELECT DISTINCT chat_id FROM users WHERE ...
+func (s *PostgresStore) GetDistinctChatIDs() ([]int64, error) {
+	var chatIDs []int64
+	result := s.db.Model(&User{}).Distinct("chat_id").Where("muted = ?", false).Pluck("chat_id", &chatIDs)
+	if result.Error != nil {
+		return nil, fmt.Errorf("fetching distinct chat IDs: %w", result.Error)
+	}
+	return chatIDs, nil
+}
+
+// GetUsersByChatID returns all active (non-muted) users for a given chat.
+// Returns full User structs because callers need the Trakt tokens to make API calls.
+func (s *PostgresStore) GetUsersByChatID(chatID int64) ([]User, error) {
+	var users []User
+	result := s.db.Where("chat_id = ? AND muted = ?", chatID, false).Find(&users)
+	if result.Error != nil {
+		return nil, fmt.Errorf("fetching users for chat ID %d: %w", chatID, result.Error)
+	}
+	return users, nil
 }
