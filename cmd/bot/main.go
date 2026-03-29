@@ -74,6 +74,23 @@ func startWatchHistoryChecker(ctx context.Context, w *worker.Worker) {
 	}
 }
 
+// startDeletionChecker periodically submits a task to process pending message deletions.
+// Runs every 30 minutes — matching the "delete ~1 hour after all watched" requirement
+// without needing precise timing.
+func startDeletionChecker(ctx context.Context, w *worker.Worker) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			w.Submit(worker.Task{Type: worker.TaskProcessDeletions})
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func main() {
 	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TMDB_API_KEY")
 
@@ -114,6 +131,7 @@ func main() {
 
 	go startEpisodeChecker(ctx, w)
 	go startWatchHistoryChecker(ctx, w)
+	go startDeletionChecker(ctx, w)
 
 	fmt.Println("Bot is running... Press Ctrl+C to stop.")
 	tgBot.Start(ctx)

@@ -162,7 +162,7 @@ func (w *Worker) createAndFormatWatchStatuses(notificationID uint, users []stora
 		return ""
 	}
 
-	return formatWatchedByLine(statuses)
+	return formatWatchedByLine(statuses, false)
 }
 
 // broadTopicNames lists names that should catch any TV show, not just a specific genre.

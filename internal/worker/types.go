@@ -14,6 +14,7 @@ const (
 	TaskSetMuted                         // = 3
 	TaskMarkWatched                      // = 4
 	TaskCheckWatchHistory                // = 5
+	TaskProcessDeletions                 // = 6
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -43,6 +44,10 @@ type Result struct {
 	// EditMessageID, when non-zero, tells the bot to edit an existing message
 	// instead of sending a new one. Zero value (default) means "send new message".
 	EditMessageID int
+
+	// DeleteMessageID, when non-zero, tells the bot to delete a message.
+	// Takes priority over EditMessageID and sending — if set, only deletion happens.
+	DeleteMessageID int
 
 	// InlineButtons is a 2D slice: each inner slice is one row of buttons.
 	// nil means no keyboard attached.

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -79,6 +80,16 @@ type Notification struct {
 
 func (n *Notification) EpisodeKey() string {
 	return fmt.Sprintf("S%02dE%02d", n.Season, n.EpisodeNumber)
+}
+
+// ScheduledDeletion records a Telegram message that should be deleted after a delay.
+// The deletion checker periodically queries for rows where DeleteAt has passed.
+type ScheduledDeletion struct {
+	gorm.Model
+	NotificationID uint  `gorm:"uniqueIndex"` // one pending deletion per notification
+	ChatID         int64 // Telegram chat containing the message
+	MessageID      int   // Telegram message ID to delete
+	DeleteAt       time.Time
 }
 
 // WatchStatus tracks whether a specific user has watched a notified episode.

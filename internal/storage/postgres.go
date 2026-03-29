@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -32,7 +33,7 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 
 	// AutoMigrate creates or updates the table schema to match the struct.
 	// It will NOT delete unused columns — only add new ones or modify existing ones.
-	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}, &WatchStatus{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}, &WatchStatus{}, &ScheduledDeletion{}); err != nil {
 		return nil, fmt.Errorf("running auto-migration: %w", err)
 	}
 
@@ -290,6 +291,34 @@ func (s *PostgresStore) MarkWatchStatus(notificationID uint, userID uint) error 
 		Update("watched", true)
 	if result.Error != nil {
 		return fmt.Errorf("marking watch status for notification %d, user %d: %w", notificationID, userID, result.Error)
+	}
+	return nil
+}
+
+// CreateScheduledDeletion inserts a new pending deletion record.
+func (s *PostgresStore) CreateScheduledDeletion(deletion *ScheduledDeletion) error {
+	if err := s.db.Create(deletion).Error; err != nil {
+		return fmt.Errorf("creating scheduled deletion for notification %d: %w", deletion.NotificationID, err)
+	}
+	return nil
+}
+
+// GetPendingDeletions returns all scheduled deletions whose DeleteAt time has passed.
+// time.Now() is evaluated at query time — GORM sends it as a parameter to PostgreSQL.
+func (s *PostgresStore) GetPendingDeletions() ([]ScheduledDeletion, error) {
+	var deletions []ScheduledDeletion
+	err := s.db.Where("delete_at <= ?", time.Now()).Find(&deletions).Error
+	if err != nil {
+		return nil, fmt.Errorf("fetching pending deletions: %w", err)
+	}
+	return deletions, nil
+}
+
+// RemoveScheduledDeletion hard-deletes a processed deletion record by ID.
+// Uses Unscoped() to bypass GORM's soft-delete — we don't need to keep these around.
+func (s *PostgresStore) RemoveScheduledDeletion(id uint) error {
+	if err := s.db.Unscoped().Delete(&ScheduledDeletion{}, id).Error; err != nil {
+		return fmt.Errorf("removing scheduled deletion %d: %w", id, err)
 	}
 	return nil
 }

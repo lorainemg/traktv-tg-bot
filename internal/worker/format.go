@@ -91,7 +91,10 @@ func formatStoredProviders(providers []storage.ProviderInfo) string {
 // formatWatchedByLine builds the "Watched by: @user ✅  @other ⏳" status line
 // from a list of WatchStatus records (each with a preloaded User).
 // This function is also used when editing the message after a user marks an episode as watched.
-func formatWatchedByLine(statuses []storage.WatchStatus) string {
+func formatWatchedByLine(statuses []storage.WatchStatus, haveAllWatched bool) string {
+	if haveAllWatched {
+		return "All caught up ✅"
+	}
 	usersInfo := make([]string, len(statuses))
 	for i, status := range statuses {
 		icon := "⏳"
@@ -119,6 +122,17 @@ func formatAirDate(isoDate string) string {
 
 func episodeKey(traktId, season, episodeNumber int) string {
 	return fmt.Sprintf("%d-%02d-%02d", traktId, season, episodeNumber)
+}
+
+// allWatched returns true when every user in the list has marked the episode as watched.
+// This is used to decide whether to keep or remove the "Mark as Watched" button.
+func allWatched(statuses []storage.WatchStatus) bool {
+	for _, s := range statuses {
+		if !s.Watched {
+			return false
+		}
+	}
+	return true
 }
 
 // watchedButton builds a one-row inline keyboard with a "Mark as Watched" button.

@@ -76,6 +76,8 @@ func (w *Worker) process(task Task) {
 		w.handleMarkWatched(task)
 	case TaskCheckWatchHistory:
 		w.handleCheckWatchHistory()
+	case TaskProcessDeletions:
+		w.handleProcessDeletions()
 	default:
 		fmt.Printf("Unknown task type: %d\n", task.Type)
 	}

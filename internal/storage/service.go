@@ -27,4 +27,9 @@ GetUserByTelegramID(telegramID int64) (*User, error)
 	GetWatchStatuses(notificationID uint) ([]WatchStatus, error)
 	GetUnwatchedStatusesByUser(userID uint) ([]WatchStatus, error)
 	MarkWatchStatus(notificationID uint, userID uint) error
+
+	// ScheduledDeletion methods — deferred message cleanup
+	CreateScheduledDeletion(deletion *ScheduledDeletion) error
+	GetPendingDeletions() ([]ScheduledDeletion, error)
+	RemoveScheduledDeletion(id uint) error
 }

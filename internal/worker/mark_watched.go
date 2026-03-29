@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 )
@@ -88,10 +89,18 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 		fmt.Println("Error fetching watch statuses:", err)
 		return
 	}
+	haveAllWatched := allWatched(statuses)
 
 	msg := formatNotificationMessage(notification)
 	if len(statuses) > 0 {
-		msg += "\n\n" + formatWatchedByLine(statuses)
+		msg += "\n\n" + formatWatchedByLine(statuses, haveAllWatched)
+	}
+
+	// Keep the button only while someone still hasn't watched.
+	// nil InlineButtons tells Telegram to remove the existing keyboard.
+	var buttons [][]InlineButton
+	if !haveAllWatched {
+		buttons = watchedButton(notification.ID)
 	}
 
 	w.results <- Result{
@@ -99,6 +108,25 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 		Text:          msg,
 		PhotoURL:      notification.PhotoURL,
 		EditMessageID: notification.TelegramMessageID,
-		InlineButtons: watchedButton(notification.ID),
+		InlineButtons: buttons,
+	}
+
+	// Schedule the notification message for deletion 1 hour from now
+	if haveAllWatched {
+		w.scheduleDeletion(notification, chatID)
+	}
+}
+
+// scheduleDeletion creates a DB record to delete the notification message later.
+// The deletion checker ticker will pick it up after the delay has passed.
+func (w *Worker) scheduleDeletion(notification *storage.Notification, chatID int64) {
+	err := w.store.CreateScheduledDeletion(&storage.ScheduledDeletion{
+		NotificationID: notification.ID,
+		ChatID:         chatID,
+		MessageID:      notification.TelegramMessageID,
+		DeleteAt:       time.Now().Add(1 * time.Second),
+	})
+	if err != nil {
+		fmt.Println("Error scheduling deletion:", err)
 	}
 }

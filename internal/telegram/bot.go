@@ -60,9 +60,21 @@ func (b *Bot) Start(ctx context.Context) {
 	b.bot.Start(ctx)
 }
 
-// SendResultsMessage sends or edits a Telegram message based on the Result.
-// If EditMessageID is set, it edits that existing message; otherwise it sends a new one.
+// SendResultsMessage sends, edits, or deletes a Telegram message based on the Result.
+// Priority: DeleteMessageID > EditMessageID > send new.
 func (b *Bot) SendResultsMessage(result worker.Result) {
+	// Delete a message — used to clean up notifications after everyone has watched
+	if result.DeleteMessageID != 0 {
+		_, err := b.bot.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
+			ChatID:    result.ChatID,
+			MessageID: result.DeleteMessageID,
+		})
+		if err != nil {
+			fmt.Println("Error deleting message:", err)
+		}
+		return
+	}
+
 	// Edit an existing message — used when updating the "Watched by" line
 	if result.EditMessageID != 0 {
 		b.editResultsMessage(result)
