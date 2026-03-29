@@ -7,9 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Single source of truth: to add a new app secret, add it here and to the
-  # YAML secret bindings below. Everything else (validation, APPHOST_ aliases,
-  # Parameters__ aliases, Portainer env payload) derives from this list.
+  # App secret names listed once — used by validation and Parameters__ generation.
   APP_SECRETS: "POSTGRES_USER POSTGRES_PASSWORD TELEGRAM_BOT_TOKEN TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TMDB_API_KEY"
 
   PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
@@ -52,7 +50,6 @@ jobs:
           # Kebab-case is derived automatically: TRAKT_CLIENT_ID -> trakt-client-id
           for var in $APP_SECRETS; do
             kebab=$(echo "$var" | tr '[:upper:]_' '[:lower:]-')
-            # echo "APPHOST_${var}=${!var}" >> "$GITHUB_ENV"
             echo "Parameters__${kebab}=${!var}" >> "$GITHUB_ENV"
           done
 
@@ -76,41 +73,17 @@ jobs:
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
 
-      - name: Build Portainer stack environment payload
+      - name: Convert Aspire .env to Portainer JSON format
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
+          env_file="aspire-output/.env.production"
+          [ -f "$env_file" ] || env_file="aspire-output/.env"
 
-          # Load Aspire-generated env vars (image tags + resolved parameters).
-          # If Aspire's .env already includes the secrets, no override is needed.
-          env_map = {}
-
-          env_path = Path("aspire-output/.env.production")
-          if not env_path.exists():
-            env_path = Path("aspire-output/.env")
-          if env_path.exists():
-            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-              line = raw_line.strip()
-              if not line or line.startswith("#") or "=" not in line:
-                continue
-              key, value = line.split("=", 1)
-              env_map[key] = value
-
-          # for key in os.environ["APP_SECRETS"].split():
-          #   env_map[key] = os.environ[key]
-
-          stack_env = [{"name": k, "value": v} for k, v in sorted(env_map.items())]
-
-          Path("aspire-output").mkdir(parents=True, exist_ok=True)
-          Path("aspire-output/portainer-stack-env.json").write_text(
-            json.dumps(stack_env),
-            encoding="utf-8",
-          )
-          PY
+          # Parse KEY=VALUE lines into Portainer's [{"name": k, "value": v}] format
+          grep -v '^\s*#' "$env_file" | grep '=' | sort \
+            | jq -R 'split("=") | {name: .[0], value: .[1:] | join("=")}' \
+            | jq -s '.' > aspire-output/portainer-stack-env.json
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
