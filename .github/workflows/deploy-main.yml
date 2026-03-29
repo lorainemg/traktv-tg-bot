@@ -47,12 +47,12 @@ jobs:
             fi
           done
 
-          # Generate APPHOST_ and Parameters__ aliases from APP_SECRETS.
-          # Aspire needs both formats for .NET configuration binding.
+          # Generate Parameters__ aliases from APP_SECRETS for Aspire's
+          # .NET configuration binding (Parameters:key -> Parameters__key).
           # Kebab-case is derived automatically: TRAKT_CLIENT_ID -> trakt-client-id
           for var in $APP_SECRETS; do
             kebab=$(echo "$var" | tr '[:upper:]_' '[:lower:]-')
-            echo "APPHOST_${var}=${!var}" >> "$GITHUB_ENV"
+            # echo "APPHOST_${var}=${!var}" >> "$GITHUB_ENV"
             echo "Parameters__${kebab}=${!var}" >> "$GITHUB_ENV"
           done
 
@@ -85,8 +85,8 @@ jobs:
           import os
           from pathlib import Path
 
-          # Start from Aspire-generated env vars (includes image tags like BOT_IMAGE),
-          # then override runtime secrets from GitHub for deployment safety.
+          # Load Aspire-generated env vars (image tags + resolved parameters).
+          # If Aspire's .env already includes the secrets, no override is needed.
           env_map = {}
 
           env_path = Path("aspire-output/.env.production")
@@ -100,8 +100,8 @@ jobs:
               key, value = line.split("=", 1)
               env_map[key] = value
 
-          for key in os.environ["APP_SECRETS"].split():
-            env_map[key] = os.environ[key]
+          # for key in os.environ["APP_SECRETS"].split():
+          #   env_map[key] = os.environ[key]
 
           stack_env = [{"name": k, "value": v} for k, v in sorted(env_map.items())]
 
