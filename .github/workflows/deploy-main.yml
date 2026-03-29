@@ -6,17 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  # App secret names listed once — used by validation and Parameters__ generation.
-  APP_SECRETS: "POSTGRES_USER POSTGRES_PASSWORD TELEGRAM_BOT_TOKEN TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET TMDB_API_KEY"
-
-  POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
-  TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
-  TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,26 +16,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate secrets and export Aspire env aliases
+      # Export all non-Portainer secrets as both plain env vars and
+      # Parameters__ aliases for Aspire's .NET configuration binding.
+      - name: Export secrets for Aspire
         shell: bash
         run: |
-          set -euo pipefail
-
-          # Validate app secrets are set (Aspire needs them via Parameters__)
-          for var in $APP_SECRETS; do
-            if [ -z "${!var:-}" ]; then
-              echo "Missing required GitHub secret: ${var}" >&2
-              exit 1
-            fi
-          done
-
-          # Generate Parameters__ aliases from APP_SECRETS for Aspire's
-          # .NET configuration binding (Parameters:key -> Parameters__key).
-          # Kebab-case is derived automatically: TRAKT_CLIENT_ID -> trakt-client-id
-          for var in $APP_SECRETS; do
-            kebab=$(echo "$var" | tr '[:upper:]_' '[:lower:]-')
-            echo "Parameters__${kebab}=${!var}" >> "$GITHUB_ENV"
-          done
+          echo '${{ toJSON(secrets) }}' | jq -r '
+            to_entries[]
+            | select(.key | test("^PORTAINER_|^GITHUB_") | not)
+            | "\(.key)=\(.value)",
+              "Parameters__\(.key | ascii_downcase | gsub("_";"-"))=\(.value)"
+          ' >> "$GITHUB_ENV"
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -96,6 +76,7 @@ jobs:
           url: ${{ secrets.PORTAINER_URL }}
           endpoint: 3
           name: trakt-tg-bot
+          type: file
           file: aspire-output/docker-compose.yaml
           env_file: aspire-output/.env.production
           standalone: true
