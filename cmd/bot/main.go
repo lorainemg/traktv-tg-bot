@@ -43,7 +43,7 @@ func requireEnv(keys ...string) map[string]string {
 // startEpisodeChecker submits an episode check task on a schedule.
 // Checks immediately on startup, then every 30 seconds (change to 1h for production).
 func startEpisodeChecker(ctx context.Context, w *worker.Worker) {
-	ticker := time.NewTicker(30 * time.Minute) // change to 1*time.Hour for production
+	ticker := time.NewTicker(30 * time.Second) // change to 1*time.Hour for production
 	defer ticker.Stop()
 
 	w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})

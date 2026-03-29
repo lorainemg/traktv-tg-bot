@@ -60,27 +60,47 @@ func (b *Bot) Start(ctx context.Context) {
 	b.bot.Start(ctx)
 }
 
-// SendResultsMessage sends, edits, or deletes a Telegram message based on the Result.
-// Priority: DeleteMessageID > EditMessageID > send new.
+// SendResultsMessage dispatches a Result to the appropriate Telegram action.
+// Priority: CallbackQuery > Delete > Edit > Send new.
 func (b *Bot) SendResultsMessage(result worker.Result) {
-	// Delete a message — used to clean up notifications after everyone has watched
-	if result.DeleteMessageID != 0 {
-		_, err := b.bot.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
-			ChatID:    result.ChatID,
-			MessageID: result.DeleteMessageID,
-		})
-		if err != nil {
-			fmt.Println("Error deleting message:", err)
-		}
-		return
-	}
-
-	// Edit an existing message — used when updating the "Watched by" line
-	if result.EditMessageID != 0 {
+	switch {
+	case result.CallbackQueryID != "":
+		b.answerCallbackResult(result)
+	case result.DeleteMessageID != 0:
+		b.deleteResultsMessage(result)
+	case result.EditMessageID != 0:
 		b.editResultsMessage(result)
-		return
+	default:
+		b.sendNewMessage(result)
 	}
+}
 
+// answerCallbackResult answers a callback query with a toast or popup.
+func (b *Bot) answerCallbackResult(result worker.Result) {
+	_, err := b.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: result.CallbackQueryID,
+		Text:            result.Text,
+		ShowAlert:       result.CallbackShowAlert,
+	})
+	if err != nil {
+		fmt.Println("Error answering callback query:", err)
+	}
+}
+
+// deleteResultsMessage deletes a Telegram message — used to clean up
+// notifications after everyone has watched.
+func (b *Bot) deleteResultsMessage(result worker.Result) {
+	_, err := b.bot.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
+		ChatID:    result.ChatID,
+		MessageID: result.DeleteMessageID,
+	})
+	if err != nil {
+		fmt.Println("Error deleting message:", err)
+	}
+}
+
+// sendNewMessage sends a new Telegram message with optional photo preview and inline buttons.
+func (b *Bot) sendNewMessage(result worker.Result) {
 	// Build link preview options based on whether we have a photo
 	var preview *models.LinkPreviewOptions
 	if result.PhotoURL != "" {
@@ -304,16 +324,12 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 			Type:   worker.TaskMarkWatched,
 			ChatID: cq.Message.Message.Chat.ID,
 			Payload: worker.MarkWatchedPayload{
-				TelegramID:     cq.From.ID,
-				ChatID:         cq.Message.Message.Chat.ID,
-				NotificationID: uint(notificationID),
+				TelegramID:      cq.From.ID,
+				ChatID:          cq.Message.Message.Chat.ID,
+				NotificationID:  uint(notificationID),
+				CallbackQueryID: cq.ID,
 			},
 		})
-		_, err = b.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{ShowAlert: false, Text: "Marking as watched...", CallbackQueryID: cq.ID})
-		if err != nil {
-			println("Error answering callback query:", err)
-			return
-		}
 	}
 }
 

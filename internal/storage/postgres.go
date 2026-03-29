@@ -42,7 +42,6 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 	return &PostgresStore{db: db}, nil
 }
 
-
 // GetUserByTelegramID looks up a user by their Telegram ID.
 // Returns (nil, nil) if the user doesn't exist — the caller checks for nil
 // to distinguish "not found" from "database error".
@@ -266,6 +265,18 @@ func (s *PostgresStore) GetWatchStatuses(notificationID uint) ([]WatchStatus, er
 		return nil, fmt.Errorf("fetching watch statuses for notification %d: %w", notificationID, err)
 	}
 	return statuses, nil
+}
+
+func (s *PostgresStore) GetUserWatchStatus(notificationID uint, userID uint) (WatchStatus, error) {
+	var status WatchStatus
+	err := s.db.Where("notification_id = ? AND user_id = ?", notificationID, userID).First(&status).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return status, nil
+		}
+		return status, fmt.Errorf("fetching watch status for notification %d and user %d: %w", notificationID, userID, err)
+	}
+	return status, nil
 }
 
 // GetUnwatchedStatusesByUser returns all WatchStatus rows where a specific user

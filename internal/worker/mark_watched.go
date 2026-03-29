@@ -30,11 +30,26 @@ func (w *Worker) handleMarkWatched(task Task) {
 	if user == nil {
 		return
 	}
-
-	if !w.markOnTrakt(user, notification, payload.ChatID) {
+	watchStatus, err := w.store.GetUserWatchStatus(notification.ID, user.ID)
+	if err != nil {
+		fmt.Println("Error looking up watch status:", err)
+		return
+	}
+	if watchStatus.ID == 0 {
+		w.answerCallback(payload.CallbackQueryID, "You're not following this show.", true)
+		return
+	}
+	if watchStatus.Watched {
+		w.answerCallback(payload.CallbackQueryID, "You've already watched this episode.", true)
 		return
 	}
 
+	if !w.markOnTrakt(user, notification) {
+		w.answerCallback(payload.CallbackQueryID, "Failed to mark as watched.", true)
+		return
+	}
+
+	w.answerCallback(payload.CallbackQueryID, "Marked as watched!", false)
 	w.updateNotificationMessage(notification, user.ID, payload.ChatID)
 }
 
@@ -47,18 +62,15 @@ func (w *Worker) resolveWatchUser(payload MarkWatchedPayload) *storage.User {
 		return nil
 	}
 	if user == nil {
-		w.results <- Result{
-			ChatID: payload.ChatID,
-			Text:   "You need to link your Trakt account first. Use /auth to get started.",
-		}
+		w.answerCallback(payload.CallbackQueryID, "You need to link your Trakt account first. Use /auth.", true)
 		return nil
 	}
 	return user
 }
 
 // markOnTrakt calls the Trakt API to mark an episode as watched.
-// Returns false on failure and sends an error message to the chat.
-func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notification, chatID int64) bool {
+// Returns false on failure — the caller is responsible for user-facing feedback.
+func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notification) bool {
 	err := w.trakt.MarkEpisodeWatched(
 		user.TraktAccessToken,
 		notification.TraktShowID,
@@ -67,10 +79,6 @@ func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notificat
 	)
 	if err != nil {
 		fmt.Println("Error marking episode as watched:", err)
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   fmt.Sprintf("Failed to mark %s %s as watched.", notification.ShowTitle, notification.EpisodeKey()),
-		}
 		return false
 	}
 	return true
@@ -89,7 +97,8 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 		fmt.Println("Error fetching watch statuses:", err)
 		return
 	}
-	haveAllWatched := allWatched(statuses)
+	//haveAllWatched := allWatched(statuses)
+	haveAllWatched := false
 
 	msg := formatNotificationMessage(notification)
 	if len(statuses) > 0 {
@@ -114,6 +123,16 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 	// Schedule the notification message for deletion 1 hour from now
 	if haveAllWatched {
 		w.scheduleDeletion(notification, chatID)
+	}
+}
+
+// answerCallback sends a Result that tells the bot to answer a callback query
+// with a toast (showAlert=false) or a modal popup (showAlert=true).
+func (w *Worker) answerCallback(callbackQueryID, text string, showAlert bool) {
+	w.results <- Result{
+		CallbackQueryID:   callbackQueryID,
+		Text:              text,
+		CallbackShowAlert: showAlert,
 	}
 }
 

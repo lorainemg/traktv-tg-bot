@@ -49,6 +49,13 @@ type Result struct {
 	// Takes priority over EditMessageID and sending — if set, only deletion happens.
 	DeleteMessageID int
 
+	// CallbackQueryID, when non-empty, tells the bot to answer a callback query
+	// (show a toast/popup) instead of sending or editing a message.
+	CallbackQueryID string
+	// CallbackShowAlert controls the toast style: false = brief top-bar toast,
+	// true = modal popup the user must dismiss. Useful for errors/warnings.
+	CallbackShowAlert bool
+
 	// InlineButtons is a 2D slice: each inner slice is one row of buttons.
 	// nil means no keyboard attached.
 	InlineButtons [][]InlineButton
@@ -79,7 +86,8 @@ type TopicPayload struct {
 // MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.
 // NotificationID comes directly from the inline button's callback data.
 type MarkWatchedPayload struct {
-	TelegramID     int64 // the user who clicked — used to find their Trakt token
-	ChatID         int64 // where to send the confirmation message
-	NotificationID uint  // DB ID of the notification — used to find which episode
+	TelegramID      int64  // the user who clicked — used to find their Trakt token
+	ChatID          int64  // where to send the confirmation message
+	NotificationID  uint   // DB ID of the notification — used to find which episode
+	CallbackQueryID string // Telegram callback query ID — used to answer with a toast
 }

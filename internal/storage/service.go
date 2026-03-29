@@ -5,7 +5,7 @@ package storage
 // Any struct whose methods match this list satisfies the interface automatically —
 // no "implements" keyword needed (this is called "structural typing").
 type Service interface {
-GetUserByTelegramID(telegramID int64) (*User, error)
+	GetUserByTelegramID(telegramID int64) (*User, error)
 	GetNotificationByID(id uint) (*Notification, error)
 	GetNotificationByMessageID(messageID int) (*Notification, error)
 	CreateUser(user *User) error
@@ -25,6 +25,7 @@ GetUserByTelegramID(telegramID int64) (*User, error)
 	// WatchStatus methods — track per-user watched state on episode notifications
 	CreateWatchStatuses(notificationID uint, userIDs []uint) error
 	GetWatchStatuses(notificationID uint) ([]WatchStatus, error)
+	GetUserWatchStatus(notificationID uint, userID uint) (WatchStatus, error)
 	GetUnwatchedStatusesByUser(userID uint) ([]WatchStatus, error)
 	MarkWatchStatus(notificationID uint, userID uint) error
 
