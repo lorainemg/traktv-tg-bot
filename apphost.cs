@@ -26,6 +26,7 @@ var telegramChatId = builder.AddParameter("telegram-chat-id");
 
 var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
 	.WithImageTag("17-alpine")
+	.WithEnvironment("POSTGRES_DB", dbName)
 	.WithDataVolume();
 
 var database = postgres.AddDatabase("traktdb", databaseName: dbName);
