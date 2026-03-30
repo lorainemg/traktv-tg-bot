@@ -31,6 +31,12 @@ func (w *Worker) handleUnseen(task Task) {
 		return
 	}
 
+	if err := w.ensureFreshToken(user); err != nil {
+		slog.Error("unseen: failed to refresh token", "user_id", user.ID, "error", err)
+		w.results <- task.TextResult("Failed to refresh Trakt token. Try /auth to re-authenticate.")
+		return
+	}
+
 	entries, err := w.trakt.GetWatchedShows(user.TraktAccessToken)
 	if err != nil {
 		slog.Error("unseen: failed to fetch watched shows", "user_id", user.ID, "error", err)

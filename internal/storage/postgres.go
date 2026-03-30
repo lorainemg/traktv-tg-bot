@@ -137,11 +137,12 @@ func (s *PostgresStore) CreateOrUpdateUser(user *User) error {
 	result := s.db.
 		Where("telegram_id = ?", user.TelegramID).
 		Assign(User{
-			FirstName:         user.FirstName,
-			Username:          user.Username,
-			ChatID:            user.ChatID,
-			TraktAccessToken:  user.TraktAccessToken,
-			TraktRefreshToken: user.TraktRefreshToken,
+			FirstName:           user.FirstName,
+			Username:            user.Username,
+			ChatID:              user.ChatID,
+			TraktAccessToken:    user.TraktAccessToken,
+			TraktRefreshToken:   user.TraktRefreshToken,
+			TraktTokenExpiresAt: user.TraktTokenExpiresAt,
 		}).
 		FirstOrCreate(user)
 	if result.Error != nil {
@@ -211,6 +212,20 @@ func (s *PostgresStore) CreateOrUpdateTopic(topic *Topic) error {
 		FirstOrCreate(topic)
 	if result.Error != nil {
 		return fmt.Errorf("upserting topic: %w", result.Error)
+	}
+	return nil
+}
+
+// UpdateUserTokens saves a fresh access/refresh token pair and expiry time.
+// Called after a successful token refresh to persist the new credentials.
+func (s *PostgresStore) UpdateUserTokens(telegramID int64, accessToken, refreshToken string, expiresAt time.Time) error {
+	result := s.db.Model(&User{}).Where("telegram_id = ?", telegramID).Updates(map[string]any{
+		"trakt_access_token":    accessToken,
+		"trakt_refresh_token":   refreshToken,
+		"trakt_token_expires_at": expiresAt,
+	})
+	if result.Error != nil {
+		return fmt.Errorf("updating tokens for user %d: %w", telegramID, result.Error)
 	}
 	return nil
 }

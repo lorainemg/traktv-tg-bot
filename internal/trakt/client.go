@@ -260,6 +260,40 @@ func (c *Client) PollForToken(deviceCode string) (*Token, error) {
 	return &t, nil
 }
 
+// RefreshToken exchanges a refresh token for a new access/refresh token pair.
+// Uses: POST /oauth/token with grant_type "refresh_token".
+// After a successful refresh, the OLD refresh token is invalidated — callers
+// must save both the new AccessToken and new RefreshToken.
+func (c *Client) RefreshToken(refreshToken string) (*Token, error) {
+	resp, err := c.do(http.MethodPost, "/oauth/token", "", struct {
+		RefreshToken string `json:"refresh_token"`
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+		RedirectURI  string `json:"redirect_uri"`
+		GrantType    string `json:"grant_type"`
+	}{
+		RefreshToken: refreshToken,
+		ClientID:     c.clientID,
+		ClientSecret: c.clientSecret,
+		RedirectURI:  "urn:ietf:wg:oauth:2.0:oob", // required by Trakt even for device flow apps
+		GrantType:    "refresh_token",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("refreshing token: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("refreshing token: unexpected status %d", resp.StatusCode)
+	}
+
+	var t Token
+	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
+		return nil, fmt.Errorf("decoding refreshed token response: %w", err)
+	}
+	return &t, nil
+}
+
 // MarkEpisodeWatched tells Trakt the user has watched a specific episode.
 // Uses: POST /sync/history - expects 201 Created on success.
 func (c *Client) MarkEpisodeWatched(accessToken string, traktShowID, season, episodeNumber int) error {

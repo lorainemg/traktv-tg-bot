@@ -66,7 +66,14 @@ func (w *Worker) collectUpcomingEpisodes(users []storage.User, today string, day
 	// Map from episode key → upcomingEpisode (entry + list of users)
 	episodeMap := make(map[string]*upcomingEpisode)
 
-	for _, user := range users {
+	for i := range users {
+		user := &users[i]
+
+		if err := w.ensureFreshToken(user); err != nil {
+			slog.Error("upcoming: failed to refresh token", "user_id", user.ID, "error", err)
+			continue
+		}
+
 		watchlistShows, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
 		if err != nil {
 			slog.Error("upcoming: failed to fetch watchlist", "user_id", user.ID, "error", err)
@@ -85,11 +92,11 @@ func (w *Worker) collectUpcomingEpisodes(users []storage.User, today string, day
 			}
 			key := episodeKey(entry.Show.IDs.Trakt, entry.Episode.Season, entry.Episode.Number)
 			if existing, ok := episodeMap[key]; ok {
-				existing.Users = append(existing.Users, user)
+				existing.Users = append(existing.Users, *user)
 			} else {
 				episodeMap[key] = &upcomingEpisode{
 					Entry: entry,
-					Users: []storage.User{user},
+					Users: []storage.User{*user},
 				}
 			}
 		}

@@ -98,14 +98,18 @@ func (w *Worker) pollForToken(chatID int64, threadID int, payload AuthPayload, d
 			continue
 		}
 
+		// Compute when the token expires: CreatedAt (unix timestamp) + ExpiresIn (seconds)
+		expiresAt := time.Unix(int64(token.CreatedAt+token.ExpiresIn), 0)
+
 		// pollForToken only runs for new users (Case 3), so just create.
 		err = w.store.CreateOrUpdateUser(&storage.User{
-			TelegramID:        payload.TelegramID,
-			FirstName:         payload.FirstName,
-			Username:          payload.Username,
-			ChatID:            chatID,
-			TraktAccessToken:  token.AccessToken,
-			TraktRefreshToken: token.RefreshToken,
+			TelegramID:          payload.TelegramID,
+			FirstName:           payload.FirstName,
+			Username:            payload.Username,
+			ChatID:              chatID,
+			TraktAccessToken:    token.AccessToken,
+			TraktRefreshToken:   token.RefreshToken,
+			TraktTokenExpiresAt: expiresAt,
 		})
 		if err != nil {
 			slog.Error("failed to save user", "error", err)

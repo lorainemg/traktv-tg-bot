@@ -26,7 +26,8 @@ func (w *Worker) handleCheckWatchHistory() {
 			slog.Error("failed to fetch users for chat", "chat_id", chatID, "error", err)
 			continue
 		}
-		for _, user := range users {
+		for i := range users {
+			user := &users[i]
 			w.checkUserWatchHistory(user, chatID)
 		}
 	}
@@ -35,7 +36,12 @@ func (w *Worker) handleCheckWatchHistory() {
 // checkUserWatchHistory fetches a single user's recent Trakt watch history,
 // compares it against their unwatched notification statuses, and updates
 // any matches.
-func (w *Worker) checkUserWatchHistory(user storage.User, chatID int64) {
+func (w *Worker) checkUserWatchHistory(user *storage.User, chatID int64) {
+	if err := w.ensureFreshToken(user); err != nil {
+		slog.Error("watch history: failed to refresh token", "user_id", user.ID, "error", err)
+		return
+	}
+
 	unwatched, err := w.store.GetUnwatchedStatusesByUser(user.ID)
 	if err != nil {
 		slog.Error("failed to fetch unwatched statuses", "user_id", user.ID, "error", err)

@@ -49,7 +49,14 @@ func (w *Worker) collectFollowedShows(users []storage.User) []followedShow {
 	// like defaultdict(list) in Python.
 	showMap := make(map[string]*followedShow)
 
-	for _, user := range users {
+	for i := range users {
+		user := &users[i]
+
+		if err := w.ensureFreshToken(user); err != nil {
+			slog.Error("shows: failed to refresh token", "user_id", user.ID, "error", err)
+			continue
+		}
+
 		entries, err := w.trakt.GetWatchedShows(user.TraktAccessToken)
 		if err != nil {
 			slog.Error("shows: failed to fetch watched shows", "user_id", user.ID, "error", err)
@@ -64,11 +71,11 @@ func (w *Worker) collectFollowedShows(users []storage.User) []followedShow {
 
 			title := entry.Show.Title
 			if existing, ok := showMap[title]; ok {
-				existing.Users = append(existing.Users, user)
+				existing.Users = append(existing.Users, *user)
 			} else {
 				showMap[title] = &followedShow{
 					Show:  entry.Show,
-					Users: []storage.User{user},
+					Users: []storage.User{*user},
 				}
 			}
 		}

@@ -74,7 +74,14 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[string]trakt.CalendarEntry {
 	episodes := make(map[string]trakt.CalendarEntry)
 
-	for _, user := range users {
+	for i := range users {
+		user := &users[i] // pointer to slice element — mutations propagate back
+
+		if err := w.ensureFreshToken(user); err != nil {
+			slog.Error("failed to refresh token", "user_id", user.ID, "error", err)
+			continue
+		}
+
 		watchlistShows, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
 		if err != nil {
 			slog.Error("failed to fetch watchlist", "user_id", user.ID, "error", err)

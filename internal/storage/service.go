@@ -1,5 +1,7 @@
 package storage
 
+import "time"
+
 // Service defines all database operations the application needs.
 // Other packages depend on this interface, not on GORM directly.
 // Any struct whose methods match this list satisfies the interface automatically -
@@ -19,6 +21,7 @@ type Service interface {
 	HasUserInChat(chatID int64) (bool, error)
 	GetTopics(chatID int64) ([]Topic, error)
 	CreateOrUpdateTopic(topic *Topic) error
+	UpdateUserTokens(telegramID int64, accessToken, refreshToken string, expiresAt time.Time) error
 	UpdateUserMuted(telegramID int64, muted bool) error
 	GetDistinctChatIDs() ([]int64, error)
 	GetUsersByChatID(chatID int64) ([]User, error)

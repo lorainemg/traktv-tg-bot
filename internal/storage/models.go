@@ -17,6 +17,7 @@ type User struct {
 	ChatID            int64 // Telegram chat where this user authenticated
 	TraktAccessToken  string
 	TraktRefreshToken string
+	TraktTokenExpiresAt time.Time // when the access token expires - used to trigger refresh
 	Muted             bool // when true, the user won't receive episode notifications
 }
 
