@@ -17,7 +17,7 @@ import (
 )
 
 // requireEnv reads multiple environment variables and exits if any are missing.
-// It takes a variadic parameter (...string) — like *args in Python or params string[] in C#.
+// It takes a variadic parameter (...string) - like *args in Python or params string[] in C#.
 // Returns a map so you can look up each value by name.
 func requireEnv(keys ...string) map[string]string {
 	values := make(map[string]string)
@@ -75,7 +75,7 @@ func startWatchHistoryChecker(ctx context.Context, w *worker.Worker) {
 }
 
 // startDeletionChecker periodically submits a task to process pending message deletions.
-// Runs every 30 minutes — matching the "delete ~1 hour after all watched" requirement
+// Runs every 30 minutes - matching the "delete ~1 hour after all watched" requirement
 // without needing precise timing.
 func startDeletionChecker(ctx context.Context, w *worker.Worker) {
 	ticker := time.NewTicker(30 * time.Minute)
@@ -110,7 +110,7 @@ func main() {
 
 	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TMDB_API_KEY")
 
-	// Connect to PostgreSQL — now returns a *PostgresStore that satisfies storage.Service
+	// Connect to PostgreSQL - now returns a *PostgresStore that satisfies storage.Service
 	store, err := storage.Connect(env["DATABASE_URL"])
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
@@ -125,7 +125,7 @@ func main() {
 	// The worker orchestrates all background work: episode checks, user linking, etc.
 	w := worker.New(store, traktClient, tmdbClient, 10)
 
-	// Create the Telegram bot — it only depends on the worker, nothing else.
+	// Create the Telegram bot - it only depends on the worker, nothing else.
 	tgBot, err := telegram.NewBot(env["TELEGRAM_BOT_TOKEN"], w)
 	if err != nil {
 		slog.Error("failed to create telegram bot", "error", err)
@@ -138,10 +138,10 @@ func main() {
 	defer stop()
 
 	// Start the worker loop in the background.
-	// "go" launches it as a goroutine — it runs concurrently, not blocking main().
+	// "go" launches it as a goroutine - it runs concurrently, not blocking main().
 	go w.Run(ctx)
 
-	// Start the results forwarder — reads from the worker's output channel
+	// Start the results forwarder - reads from the worker's output channel
 	// and delivers messages via Telegram.
 	tgBot.StartResultsForwarder(ctx)
 

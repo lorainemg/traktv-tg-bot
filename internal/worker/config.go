@@ -10,7 +10,7 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 )
 
-// Default chat config values — used when no config row exists in the DB.
+// Default chat config values - used when no config row exists in the DB.
 const (
 	defaultCountry       = "US"
 	defaultTimezoneName      = "America/New_York"
@@ -96,7 +96,7 @@ func (w *Worker) handlePromptCountry(task Task) {
 		Text:            "Send a country code below",
 	}
 
-	// Prompt the user for input — ForceReply makes Telegram open the reply UI,
+	// Prompt the user for input - ForceReply makes Telegram open the reply UI,
 	// which ensures the bot receives the response even in group chats with
 	// privacy mode enabled (bots always receive replies to their own messages).
 	w.results <- Result{
@@ -136,7 +136,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 		return
 	}
 
-	// Single timezone — auto-set it without asking
+	// Single timezone - auto-set it without asking
 	if len(timezones) == 1 {
 		err = w.store.CreateOrUpdateChatConfig(&storage.ChatConfig{
 			ChatID:        payload.ChatID,
@@ -158,7 +158,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 		return
 	}
 
-	// Multiple timezones — show inline buttons, one per row
+	// Multiple timezones - show inline buttons, one per row
 	// (timezone names are long, so one column reads better)
 	buttons := make([][]InlineButton, len(timezones))
 	for i, tz := range timezones {
@@ -228,7 +228,7 @@ func (w *Worker) handleTextInput(task Task) {
 
 	pending, exists := w.consumePendingInput(payload.ChatID)
 	if !exists {
-		return // no pending input — ignore the message
+		return // no pending input - ignore the message
 	}
 
 	switch pending.action {
@@ -297,7 +297,7 @@ func (w *Worker) loadChatSettings(chatID int64) (chatSettings, error) {
 
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
-		// Invalid timezone in DB — fall back to default rather than breaking
+		// Invalid timezone in DB - fall back to default rather than breaking
 		slog.Warn("invalid timezone in config, using default", "timezone", tzName, "chat_id", chatID)
 		loc = defaultTimezone
 	}
@@ -333,7 +333,7 @@ func resolveConfig(config *storage.ChatConfig) (country, timezone string, delete
 // and inline buttons. When editMessageID is non-zero, the result edits an
 // existing message instead of sending a new one.
 func buildConfigResult(chatID int64, editMessageID int, country, timezone string, deleteWatched bool) Result {
-	// Escape underscores for MarkdownV1 — characters like _ in "America/New_York"
+	// Escape underscores for MarkdownV1 - characters like _ in "America/New_York"
 	// would otherwise be parsed as italic formatting markers by Telegram.
 	escapedTimezone := strings.ReplaceAll(timezone, "_", "\\_")
 

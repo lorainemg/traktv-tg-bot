@@ -8,7 +8,7 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 )
 
-// handleStartAuth handles /auth — either moves an existing user's notifications
+// handleStartAuth handles /auth - either moves an existing user's notifications
 // to the current chat, or starts the Trakt OAuth device flow for new users.
 func (w *Worker) handleStartAuth(task Task) {
 	payload, ok := task.Payload.(AuthPayload)
@@ -29,7 +29,7 @@ func (w *Worker) handleStartAuth(task Task) {
 
 	if existing != nil {
 		w.handleExistingUserAuth(task, payload, existing)
-		// Update names on every /auth — catches Telegram display name changes.
+		// Update names on every /auth - catches Telegram display name changes.
 		err = w.store.UpdateUserNames(payload.TelegramID, payload.FirstName, payload.Username)
 		if err != nil {
 			slog.Error("failed to update user names", "error", err)
@@ -109,7 +109,7 @@ func (w *Worker) pollForToken(chatID int64, payload AuthPayload, deviceCode stri
 			}
 			return
 		}
-		// nil token means "not authorized yet" — keep polling
+		// nil token means "not authorized yet" - keep polling
 		if token == nil {
 			continue
 		}

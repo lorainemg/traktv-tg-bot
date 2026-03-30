@@ -9,12 +9,12 @@ import (
 )
 
 // defaultTimezone is used when no per-chat timezone is configured.
-// Loaded once at package init — safe for concurrent use across goroutines.
+// Loaded once at package init - safe for concurrent use across goroutines.
 // Later, when per-chat timezones are stored in the DB, callers will pass
 // the chat's *time.Location instead of this default.
 var defaultTimezone = mustLoadLocation("America/New_York")
 
-// mustLoadLocation loads a timezone and panics if it fails — used only for
+// mustLoadLocation loads a timezone and panics if it fails - used only for
 // the hardcoded default, so a panic means a broken Go installation.
 func mustLoadLocation(name string) *time.Location {
 	loc, err := time.LoadLocation(name)
@@ -31,7 +31,7 @@ var hiddenProviders = map[string]bool{
 
 // formatNotificationMessage builds the notification text from stored Notification data.
 // Used both for the initial send and when editing the message after a watch status update.
-// loc controls the timezone for the air date — pass defaultTimezone when no per-chat setting exists.
+// loc controls the timezone for the air date - pass defaultTimezone when no per-chat setting exists.
 func formatNotificationMessage(n *storage.Notification, loc *time.Location) string {
 	airDate := formatAirDate(n.FirstAired, loc)
 
@@ -47,7 +47,7 @@ func formatNotificationMessage(n *storage.Notification, loc *time.Location) stri
 		msg += fmt.Sprintf(" · ⏱ %dm", n.Runtime)
 	}
 
-	// Line 4: ratings — Trakt score + IMDb link
+	// Line 4: ratings - Trakt score + IMDb link
 	if n.Rating > 0 || n.IMDBID != "" {
 		var ratings []string
 		if n.Rating > 0 && n.ShowSlug != "" {
@@ -132,7 +132,7 @@ func formatAirDate(isoDate string, loc *time.Location) string {
 		return isoDate
 	}
 	// t.In(loc) converts from UTC to the target timezone.
-	// The "MST" in the format string is a Go layout placeholder — it gets
+	// The "MST" in the format string is a Go layout placeholder - it gets
 	// replaced with the timezone abbreviation (EST, EDT, PST, etc.).
 	return t.In(loc).Format("Jan 2 at 3:04 PM MST")
 }
@@ -159,7 +159,7 @@ func allWatched(statuses []storage.WatchStatus) bool {
 
 // watchedButton builds a one-row inline keyboard with a "Mark as Watched" button.
 // The callback data encodes the notification DB ID so the worker knows which episode
-// was clicked. Format: "watched:<id>" — e.g. "watched:42".
+// was clicked. Format: "watched:<id>" - e.g. "watched:42".
 func watchedButton(notificationID uint) [][]InlineButton {
 	return [][]InlineButton{
 		{

@@ -1,7 +1,7 @@
 # ── Dev stage: hot reload with Air ──
 FROM golang:1.26-alpine AS dev
 
-# Install Air for hot reloading — watches .go files and rebuilds automatically.
+# Install Air for hot reloading - watches .go files and rebuilds automatically.
 # "go install" downloads and compiles a Go binary into $GOPATH/bin.
 RUN go install github.com/air-verse/air@latest
 

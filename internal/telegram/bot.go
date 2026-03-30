@@ -14,7 +14,7 @@ import (
 )
 
 // Bot ties together the Telegram bot and the worker queue.
-// The bot is now a pure "UI layer" — it receives commands and forwards them
+// The bot is now a pure "UI layer" - it receives commands and forwards them
 // to the worker. No database, no Trakt client, no business logic.
 type Bot struct {
 	bot    *bot.Bot
@@ -52,6 +52,7 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/mute", bot.MatchTypePrefix, b.handleMute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/config", bot.MatchTypePrefix, b.handleConfig)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unseen", bot.MatchTypePrefix, b.handleUnseen)
 
 	b.bot = tgBot
 	return b, nil
@@ -90,7 +91,7 @@ func (b *Bot) answerCallbackResult(result worker.Result) {
 	}
 }
 
-// deleteResultsMessage deletes a Telegram message — used to clean up
+// deleteResultsMessage deletes a Telegram message - used to clean up
 // notifications after everyone has watched.
 func (b *Bot) deleteResultsMessage(result worker.Result) {
 	_, err := b.bot.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
@@ -127,7 +128,7 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 	// Set ReplyMarkup: ForceReply takes priority (prompts user to reply),
 	// otherwise use inline keyboard buttons if present.
 	// A nil pointer assigned to the ReplyMarkup interface field is non-nil in Go,
-	// which causes Telegram to reject the request — so we only set it when needed.
+	// which causes Telegram to reject the request - so we only set it when needed.
 	if result.ForceReply {
 		params.ReplyMarkup = &models.ForceReply{
 			ForceReply:            true,
@@ -175,7 +176,7 @@ func (b *Bot) editResultsMessage(result worker.Result) {
 	}
 	_, err := b.bot.EditMessageText(context.Background(), editParams)
 	if err != nil {
-		// Telegram rejects edits when the content hasn't changed — this is expected
+		// Telegram rejects edits when the content hasn't changed - this is expected
 		// when a user clicks the button but was already marked as watched.
 		if strings.Contains(err.Error(), "message is not modified") {
 			return
@@ -205,18 +206,19 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 
 <b>What happens automatically</b>
 • When a new episode airs for a show anyone here follows, I post a notification with details and streaming links
-• Each notification tracks who's watched — click "✅ Mark as Watched" to update your status (this also syncs to your Trakt account)
+• Each notification tracks who's watched - click "✅ Mark as Watched" to update your status (this also syncs to your Trakt account)
 • If you watch on Trakt directly, I'll pick that up too
 • Notifications can auto-delete once everyone's watched (toggle via /config)
 
 <b>Commands</b>
-/auth — Link your <a href="https://trakt.tv">Trakt.tv</a> account so I can track your shows
-/upcoming [days] — See what's airing soon (default: 7 days, max: 31)
-/shows — See all followed shows and who's watching them
-/register_topic &lt;genre&gt; — Route episode notifications of a genre to this group topic
-/config — Chat settings: country, timezone, auto-delete watched notifications
-/mute — Take a break from episode notifications
-/unmute — Turn notifications back on
+/auth - Link your <a href="https://trakt.tv">Trakt.tv</a> account so I can track your shows
+/upcoming [days] - See what's airing soon (default: 7 days, max: 31)
+/unseen [@user] - See unseen episode counts (yours, or reply/mention someone)
+/shows - See all followed shows and who's watching them
+/register_topic &lt;genre&gt; - Route episode notifications of a genre to this group topic
+/config - Chat settings: country, timezone, auto-delete watched notifications
+/mute - Take a break from episode notifications
+/unmute - Turn notifications back on
 
 Just /auth to get started and I'll handle the rest!`
 
@@ -307,7 +309,7 @@ func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models
 	days := 7
 
 	if daysTxt != "" {
-		// var declares err without assigning — needed so we can use = (not :=) for days.
+		// var declares err without assigning - needed so we can use = (not :=) for days.
 		// Using := here would create a NEW days scoped to this if-block, shadowing the outer one.
 		var err error
 		days, err = strconv.Atoi(daysTxt)
@@ -406,6 +408,34 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 	}
 }
 
+// handleUnseen submits a task to list unseen episodes for a user.
+// Supports three forms:
+//   - /unseen           — your own unseen episodes
+//   - /unseen @username — unseen episodes for the mentioned user
+//   - reply to a message with /unseen — unseen episodes for that user
+func (b *Bot) handleUnseen(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	msg := update.Message
+	payload := worker.UnseenPayload{RequesterID: msg.From.ID}
+
+	// Check for @username argument: "/unseen @loraine" or "/unseen loraine"
+	_, arg, _ := strings.Cut(msg.Text, " ")
+	arg = strings.TrimSpace(arg)
+	arg = strings.TrimPrefix(arg, "@") // strip leading @ if present
+
+	if arg != "" {
+		payload.TargetUsername = arg
+	} else if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil {
+		// Command was sent as a reply — target the replied-to user
+		payload.TargetTelegramID = msg.ReplyToMessage.From.ID
+	}
+
+	b.worker.Submit(worker.Task{
+		Type:    worker.TaskUnseen,
+		ChatID:  msg.Chat.ID,
+		Payload: payload,
+	})
+}
+
 // handleConfig submits a task to display the current chat settings.
 func (b *Bot) handleConfig(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
@@ -416,7 +446,7 @@ func (b *Bot) handleConfig(ctx context.Context, tgBot *bot.Bot, update *models.U
 
 // buildInlineKeyboard converts our simple InlineButton slices into Telegram's
 // InlineKeyboardMarkup type. Returns nil if there are no buttons, which means
-// "no keyboard" — Telegram will either not show one (new message) or remove an
+// "no keyboard" - Telegram will either not show one (new message) or remove an
 // existing one (edit).
 func buildInlineKeyboard(buttons [][]worker.InlineButton) *models.InlineKeyboardMarkup {
 	if len(buttons) == 0 {
@@ -447,7 +477,7 @@ func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.
 	// Check if this is a reply to a bot prompt (e.g. "Reply with a country code").
 	// ReplyToMessage is non-nil only when the user explicitly replies to a message.
 	// Combined with HasPendingInput, this ensures we only capture replies to our
-	// own prompts — regular group conversation is never forwarded to the worker.
+	// own prompts - regular group conversation is never forwarded to the worker.
 	if update.Message != nil && update.Message.Text != "" && update.Message.ReplyToMessage != nil {
 		chatID := update.Message.Chat.ID
 		if b.worker.HasPendingInput(chatID) {

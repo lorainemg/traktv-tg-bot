@@ -12,7 +12,7 @@ import (
 // can be routed to the correct topic based on its name.
 func (w *Worker) handleRegisterTopic(task Task) {
 	// Type assertion: extract the concrete TopicPayload from the generic `any` field.
-	// The comma-ok pattern (value, ok) safely checks the type at runtime —
+	// The comma-ok pattern (value, ok) safely checks the type at runtime -
 	// if Payload isn't a TopicPayload, ok is false instead of panicking.
 	payload, ok := task.Payload.(TopicPayload)
 	if !ok {
@@ -21,7 +21,7 @@ func (w *Worker) handleRegisterTopic(task Task) {
 	}
 
 	// Guard: only allow topic registration in chats where at least
-	// one user has authenticated — prevents random groups from using the bot.
+	// one user has authenticated - prevents random groups from using the bot.
 	registered, err := w.store.HasUserInChat(payload.ChatID)
 	if err != nil {
 		slog.Error("failed to check chat registration", "error", err)

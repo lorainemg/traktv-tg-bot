@@ -10,7 +10,7 @@ import (
 // a confirmation message back through the results channel.
 func (w *Worker) handleSetMuted(task Task) {
 	// Type assertion: extract MutePayload from task.Payload (which is type "any").
-	// This is like casting in C#: (MutePayload)task.Payload — but Go checks at runtime.
+	// This is like casting in C#: (MutePayload)task.Payload - but Go checks at runtime.
 	// The ", ok" pattern returns false instead of panicking if the type doesn't match.
 	payload, ok := task.Payload.(MutePayload)
 	if !ok {

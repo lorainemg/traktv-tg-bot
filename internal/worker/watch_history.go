@@ -42,7 +42,7 @@ func (w *Worker) checkUserWatchHistory(user storage.User, chatID int64) {
 		return
 	}
 	if len(unwatched) == 0 {
-		return // nothing pending — skip the API call
+		return // nothing pending - skip the API call
 	}
 
 	// Look back 2 hours to catch watches since the last poll, with a safety margin

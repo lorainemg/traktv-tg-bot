@@ -10,7 +10,7 @@ import (
 )
 
 // handleCheckEpisodes fetches all active chats and checks each one for new episodes.
-// It iterates per chat (not per user) because notifications are scoped to chats —
+// It iterates per chat (not per user) because notifications are scoped to chats -
 // one notification per episode per chat, regardless of how many users follow the show.
 func (w *Worker) handleCheckEpisodes(task Task) {
 	slog.Info("checking for new episodes")
@@ -27,7 +27,7 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 		users, err := w.store.GetUsersByChatID(chatID)
 		if err != nil {
 			slog.Error("failed to fetch users for chat", "chat_id", chatID, "error", err)
-			continue // non-fatal — skip this chat and try the next one
+			continue // non-fatal - skip this chat and try the next one
 		}
 		w.checkChatEpisodes(chatID, users, today)
 	}
@@ -47,7 +47,7 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 	topics, err := w.store.GetTopics(chatID)
 	if err != nil {
 		slog.Error("failed to fetch topics", "error", err)
-		// Non-fatal — notifications will go to General
+		// Non-fatal - notifications will go to General
 		topics = nil
 	}
 
@@ -78,7 +78,7 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 		watchlistShows, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
 		if err != nil {
 			slog.Error("failed to fetch watchlist", "user_id", user.ID, "error", err)
-			// Non-fatal — proceed without filtering (nil map reads return zero values safely)
+			// Non-fatal - proceed without filtering (nil map reads return zero values safely)
 			watchlistShows = nil
 		}
 
@@ -104,7 +104,7 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 
 // notifyEpisode checks if an episode was already notified, and if not,
 // sends a Result to the output channel and saves the notification.
-// topics is the list of registered forum topics for this chat — used to
+// topics is the list of registered forum topics for this chat - used to
 // route the notification to the right topic thread.
 func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []storage.User, topics []storage.Topic, watchInfo *tmdb.WatchInfo, loc *time.Location) {
 	hasNotification, err := w.store.HasNotification(chatID, entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
@@ -150,7 +150,7 @@ func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []
 
 // createAndFormatWatchStatuses creates WatchStatus rows for every user in the chat
 // and returns the formatted "Watched by" line. Returns an empty string if anything
-// fails — the notification still goes out, just without the status line.
+// fails - the notification still goes out, just without the status line.
 func (w *Worker) createAndFormatWatchStatuses(notificationID uint, users []storage.User) string {
 	userIDs := make([]uint, len(users))
 	for i, u := range users {
@@ -205,7 +205,7 @@ func resolveThreadID(genres []string, topics []storage.Topic) int {
 // buildNotification creates a Notification struct from API data, storing all
 // fields needed to reconstruct the message later for editing.
 func buildNotification(entry trakt.CalendarEntry, chatID int64, watchInfo *tmdb.WatchInfo) storage.Notification {
-	// Build thumbnail URL — Trakt returns paths without the protocol prefix
+	// Build thumbnail URL - Trakt returns paths without the protocol prefix
 	var photoURL string
 	if len(entry.Show.Images.Thumb) > 0 {
 		photoURL = "https://" + entry.Show.Images.Thumb[0]

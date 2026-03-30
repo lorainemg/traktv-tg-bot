@@ -25,7 +25,7 @@ func (w *Worker) handleUpcoming(task Task) {
 	chatID := task.ChatID
 
 	// Type-assert the Payload to int. The comma-ok form (value, ok) avoids
-	// a panic if the type doesn't match — like a safe cast in C#.
+	// a panic if the type doesn't match - like a safe cast in C#.
 	days, ok := task.Payload.(int)
 	if !ok || days < 1 {
 		days = 7
@@ -114,7 +114,7 @@ func sortUpcomingEpisodes(episodeMap map[string]*upcomingEpisode) []upcomingEpis
 		episodes = append(episodes, *ep)
 	}
 
-	// sort.Slice sorts in-place using a "less" function — like Python's
+	// sort.Slice sorts in-place using a "less" function - like Python's
 	// list.sort(key=...) but you provide a comparison function instead of a key.
 	sort.Slice(episodes, func(i, j int) bool {
 		return episodes[i].Entry.FirstAired < episodes[j].Entry.FirstAired
@@ -149,7 +149,7 @@ func formatTimeUntil(isoDate string) string {
 		return "?"
 	}
 
-	// time.Until returns a Duration — the difference between airTime and now.
+	// time.Until returns a Duration - the difference between airTime and now.
 	// Like Python's (future - datetime.now()), but returns a single Duration
 	// value instead of a timedelta. We break it into days/hours/minutes manually.
 	dur := time.Until(airTime)

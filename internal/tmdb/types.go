@@ -23,14 +23,14 @@ type ProviderInfo struct {
 	URL  string // e.g. "https://www.netflix.com", empty if unknown
 }
 
-// WatchInfo is what we return to callers — a clean summary of where to watch.
+// WatchInfo is what we return to callers - a clean summary of where to watch.
 type WatchInfo struct {
 	Providers []ProviderInfo // streaming services with links
 	Link      string         // JustWatch URL for this specific show
 }
 
 // providerLinks maps TMDB provider_name values to their homepage URLs.
-// Names must match TMDB's exact strings — most use "Plus" spelled out,
+// Names must match TMDB's exact strings - most use "Plus" spelled out,
 // but some like "AMC+" keep the symbol.
 var providerLinks = map[string]string{
 	"Netflix":                      "https://www.netflix.com",

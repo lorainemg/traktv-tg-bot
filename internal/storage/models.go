@@ -51,7 +51,7 @@ type ProviderInfo struct {
 
 // Notification tracks episodes we've already notified about,
 // so we don't send duplicates to the group chat.
-// One notification per show+episode combo per chat — shared across all users in that chat.
+// One notification per show+episode combo per chat - shared across all users in that chat.
 // Stores all episode data needed to reconstruct the notification message for editing.
 type Notification struct {
 	gorm.Model
@@ -63,7 +63,7 @@ type Notification struct {
 	TraktShowID       int
 	TelegramMessageID int
 
-	// Episode details from Trakt — stored so we can rebuild the message when editing
+	// Episode details from Trakt - stored so we can rebuild the message when editing
 	EpisodeTitle string
 	FirstAired   string
 	Runtime      int
@@ -72,7 +72,7 @@ type Notification struct {
 	IMDBID       string
 	PhotoURL     string
 
-	// Watch providers from TMDB — serializer:"json" stores the Go slice as a JSON
+	// Watch providers from TMDB - serializer:"json" stores the Go slice as a JSON
 	// string in a single text column. GORM handles marshal/unmarshal automatically.
 	Providers []ProviderInfo `gorm:"serializer:json"`
 	WatchLink string         // JustWatch URL for the show
@@ -89,7 +89,7 @@ type ScheduledDeletion struct {
 }
 
 // ChatConfig stores per-chat settings like country, timezone, and deletion preferences.
-// One row per chat — uniqueIndex on ChatID enforces this at the database level.
+// One row per chat - uniqueIndex on ChatID enforces this at the database level.
 type ChatConfig struct {
 	gorm.Model
 	ChatID        int64  `gorm:"uniqueIndex"` // one config per chat
@@ -99,7 +99,7 @@ type ChatConfig struct {
 }
 
 // WatchStatus tracks whether a specific user has watched a notified episode.
-// This is a "join table" — it links a Notification to a User, with an extra
+// This is a "join table" - it links a Notification to a User, with an extra
 // Watched flag. Used to render the "Watched by: @user ✅  @other ⏳" line
 // at the bottom of episode notification messages.
 type WatchStatus struct {
@@ -109,7 +109,7 @@ type WatchStatus struct {
 	UserID         uint `gorm:"uniqueIndex:idx_notification_user"`
 	Watched        bool // false = ⏳ (pending), true = ✅ (watched)
 
-	// GORM associations — lets us eager-load related records with Preload().
+	// GORM associations - lets us eager-load related records with Preload().
 	// "foreignKey:..." tells GORM which field in this struct points to the related table's primary key.
 	User         User         `gorm:"foreignKey:UserID"`
 	Notification Notification `gorm:"foreignKey:NotificationID"`

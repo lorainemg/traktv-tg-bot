@@ -12,7 +12,7 @@ import (
 )
 
 // PostgresStore is the concrete implementation of Service using GORM + PostgreSQL.
-// It holds a private db field — no other package can access GORM directly.
+// It holds a private db field - no other package can access GORM directly.
 type PostgresStore struct {
 	db *gorm.DB
 }
@@ -21,7 +21,7 @@ type PostgresStore struct {
 // and returns a *PostgresStore that satisfies the Service interface.
 func Connect(databaseURL string) (*PostgresStore, error) {
 	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{
-		// Suppress "record not found" warnings — these are expected when checking
+		// Suppress "record not found" warnings - these are expected when checking
 		// if a record exists (e.g. HasNotification, GetUserByTelegramID).
 		Logger: logger.New(log.Default(), logger.Config{
 			IgnoreRecordNotFoundError: true,
@@ -32,18 +32,18 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 	}
 
 	// AutoMigrate creates or updates the table schema to match the struct.
-	// It will NOT delete unused columns — only add new ones or modify existing ones.
+	// It will NOT delete unused columns - only add new ones or modify existing ones.
 	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}, &WatchStatus{}, &ScheduledDeletion{}, &ChatConfig{}); err != nil {
 		return nil, fmt.Errorf("running auto-migration: %w", err)
 	}
 
 	// &PostgresStore{db: db} creates a pointer to a new PostgresStore.
-	// The &  operator takes the address — like & in C, giving you a pointer.
+	// The &  operator takes the address - like & in C, giving you a pointer.
 	return &PostgresStore{db: db}, nil
 }
 
 // GetUserByTelegramID looks up a user by their Telegram ID.
-// Returns (nil, nil) if the user doesn't exist — the caller checks for nil
+// Returns (nil, nil) if the user doesn't exist - the caller checks for nil
 // to distinguish "not found" from "database error".
 func (s *PostgresStore) GetUserByTelegramID(telegramID int64) (*User, error) {
 	var user User
@@ -53,6 +53,20 @@ func (s *PostgresStore) GetUserByTelegramID(telegramID int64) (*User, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("fetching user by telegram ID %d: %w", telegramID, err)
+	}
+	return &user, nil
+}
+
+// GetUserByUsername looks up a user by their Telegram username (case-insensitive).
+// Returns (nil, nil) if the user doesn't exist — same pattern as GetUserByTelegramID.
+func (s *PostgresStore) GetUserByUsername(username string) (*User, error) {
+	var user User
+	err := s.db.Where("LOWER(username) = LOWER(?)", username).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching user by username %q: %w", username, err)
 	}
 	return &user, nil
 }
@@ -117,7 +131,7 @@ func (s *PostgresStore) UpdateNotificationMessageID(notificationID uint, message
 	return nil
 }
 
-// CreateOrUpdateUser upserts a user by TelegramID — updates tokens and ChatID
+// CreateOrUpdateUser upserts a user by TelegramID - updates tokens and ChatID
 // if the user already exists, otherwise inserts a new record.
 func (s *PostgresStore) CreateOrUpdateUser(user *User) error {
 	result := s.db.
@@ -160,7 +174,7 @@ func (s *PostgresStore) CreateNotification(notification *Notification) error {
 }
 
 // HasUserInChat checks whether at least one authenticated user exists
-// for the given chat. Uses the same errors.Is pattern as HasNotification —
+// for the given chat. Uses the same errors.Is pattern as HasNotification -
 // ErrRecordNotFound means no user, any other error is a real failure.
 func (s *PostgresStore) HasUserInChat(chatID int64) (bool, error) {
 	var user User
@@ -184,7 +198,7 @@ func (s *PostgresStore) GetTopics(chatID int64) ([]Topic, error) {
 	return topics, nil
 }
 
-// CreateOrUpdateTopic upserts a topic — if the chat+thread combo already exists,
+// CreateOrUpdateTopic upserts a topic - if the chat+thread combo already exists,
 // it updates the name. Otherwise it creates a new record.
 // This uses GORM's Assign + FirstOrCreate pattern:
 //   - Where clause finds the row by ChatID+ThreadID
@@ -214,7 +228,7 @@ func (s *PostgresStore) UpdateUserMuted(telegramID int64, muted bool) error {
 // GetDistinctChatIDs returns the unique chat IDs that have at least one active
 // (non-muted) user. Used to drive per-chat episode checking instead of per-user.
 // Model(&User{}) targets the users table, Distinct+Pluck extracts a flat []int64
-// rather than full User structs — like SELECT DISTINCT chat_id FROM users WHERE ...
+// rather than full User structs - like SELECT DISTINCT chat_id FROM users WHERE ...
 func (s *PostgresStore) GetDistinctChatIDs() ([]int64, error) {
 	var chatIDs []int64
 	result := s.db.Model(&User{}).Distinct("chat_id").Where("muted = ?", false).Pluck("chat_id", &chatIDs)
@@ -235,7 +249,7 @@ func (s *PostgresStore) GetUsersByChatID(chatID int64) ([]User, error) {
 	return users, nil
 }
 
-// CreateWatchStatuses bulk-inserts WatchStatus rows for a notification — one per user.
+// CreateWatchStatuses bulk-inserts WatchStatus rows for a notification - one per user.
 // All start with Watched=false (⏳). Uses a slice of user IDs rather than full User
 // structs because that's all the caller needs to pass. The loop builds a []WatchStatus
 // slice, then Create() inserts them all in a single SQL INSERT.
@@ -256,7 +270,7 @@ func (s *PostgresStore) CreateWatchStatuses(notificationID uint, userIDs []uint)
 
 // GetWatchStatuses returns all WatchStatus rows for a notification, with each
 // row's User pre-loaded so callers can access usernames/names for display.
-// Preload("User") tells GORM to run a second query to fill the User field —
+// Preload("User") tells GORM to run a second query to fill the User field -
 // similar to SQLAlchemy's joinedload() or Entity Framework's Include().
 func (s *PostgresStore) GetWatchStatuses(notificationID uint) ([]WatchStatus, error) {
 	var statuses []WatchStatus
@@ -307,7 +321,7 @@ func (s *PostgresStore) MarkWatchStatus(notificationID uint, userID uint) error 
 }
 
 // GetChatConfig retrieves the configuration for a chat.
-// Returns (nil, nil) if no config exists yet — the caller uses defaults.
+// Returns (nil, nil) if no config exists yet - the caller uses defaults.
 func (s *PostgresStore) GetChatConfig(chatID int64) (*ChatConfig, error) {
 	var config ChatConfig
 	err := s.db.Where("chat_id = ?", chatID).First(&config).Error
@@ -322,7 +336,7 @@ func (s *PostgresStore) GetChatConfig(chatID int64) (*ChatConfig, error) {
 
 // CreateOrUpdateChatConfig upserts a chat's config by ChatID.
 // If a row exists, it updates country/timezone/delete_watched; otherwise it creates one.
-// Uses map[string]any instead of a struct in Assign — GORM skips zero-value struct
+// Uses map[string]any instead of a struct in Assign - GORM skips zero-value struct
 // fields (false, "", 0), so DeleteWatched=false would be silently ignored with a struct.
 // A map explicitly includes every key, so GORM always sends the UPDATE.
 func (s *PostgresStore) CreateOrUpdateChatConfig(config *ChatConfig) error {
@@ -349,7 +363,7 @@ func (s *PostgresStore) CreateScheduledDeletion(deletion *ScheduledDeletion) err
 }
 
 // GetPendingDeletions returns all scheduled deletions whose DeleteAt time has passed.
-// time.Now() is evaluated at query time — GORM sends it as a parameter to PostgreSQL.
+// time.Now() is evaluated at query time - GORM sends it as a parameter to PostgreSQL.
 func (s *PostgresStore) GetPendingDeletions() ([]ScheduledDeletion, error) {
 	var deletions []ScheduledDeletion
 	err := s.db.Where("delete_at <= ?", time.Now()).Find(&deletions).Error
@@ -360,7 +374,7 @@ func (s *PostgresStore) GetPendingDeletions() ([]ScheduledDeletion, error) {
 }
 
 // RemoveScheduledDeletion hard-deletes a processed deletion record by ID.
-// Uses Unscoped() to bypass GORM's soft-delete — we don't need to keep these around.
+// Uses Unscoped() to bypass GORM's soft-delete - we don't need to keep these around.
 func (s *PostgresStore) RemoveScheduledDeletion(id uint) error {
 	if err := s.db.Unscoped().Delete(&ScheduledDeletion{}, id).Error; err != nil {
 		return fmt.Errorf("removing scheduled deletion %d: %w", id, err)

@@ -21,16 +21,16 @@ type pendingInput struct {
 // Worker reads tasks from a channel, processes them using the Trakt API
 // and storage service, and sends results back through another channel.
 type Worker struct {
-	tasks   chan Task       // input queue — other packages send tasks here
-	results chan Result     // output queue — worker sends messages to deliver here
+	tasks   chan Task       // input queue - other packages send tasks here
+	results chan Result     // output queue - worker sends messages to deliver here
 	store   storage.Service // database operations (the interface, not the concrete type)
 	trakt   *trakt.Client   // Trakt API client
-	tmdb    *tmdb.Client    // TMDB API client — used for watch provider lookups
+	tmdb    *tmdb.Client    // TMDB API client - used for watch provider lookups
 
 	// pendingInputs tracks chats where the worker expects text input.
 	// Accessed from both the bot goroutine (HasPendingInput) and the worker
 	// goroutine (setPendingInput, consumePendingInput), so it's protected
-	// by a sync.Mutex — Go's mutual exclusion lock, like threading.Lock()
+	// by a sync.Mutex - Go's mutual exclusion lock, like threading.Lock()
 	// in Python or the lock keyword in C#.
 	mu            sync.Mutex
 	pendingInputs map[int64]pendingInput // chatID → what we're waiting for
@@ -38,7 +38,7 @@ type Worker struct {
 
 // New creates a Worker with buffered channels of the given size.
 // bufferSize controls how many tasks/results can queue up before
-// the sender blocks — like queue.Queue(maxsize=N) in Python.
+// the sender blocks - like queue.Queue(maxsize=N) in Python.
 func New(store storage.Service, traktClient *trakt.Client, tmdbClient *tmdb.Client, bufferSize int) *Worker {
 	return &Worker{
 		tasks:         make(chan Task, bufferSize),
@@ -51,14 +51,14 @@ func New(store storage.Service, traktClient *trakt.Client, tmdbClient *tmdb.Clie
 }
 
 // Submit sends a task into the worker's input queue.
-// This is safe to call from any goroutine — channels are concurrency-safe by design.
+// This is safe to call from any goroutine - channels are concurrency-safe by design.
 func (w *Worker) Submit(task Task) {
 	w.tasks <- task
 }
 
 // Results returns a receive-only channel for consuming worker output.
 // The "<-chan" type means callers can only READ from this channel, not write to it.
-// This is a compile-time safety measure — like exposing a ReadOnlyCollection in C#.
+// This is a compile-time safety measure - like exposing a ReadOnlyCollection in C#.
 func (w *Worker) Results() <-chan Result {
 	return w.results
 }
@@ -69,10 +69,10 @@ func (w *Worker) Run(ctx context.Context) {
 	for {
 		select {
 		case task := <-w.tasks:
-			// A task arrived — dispatch it to the right handler.
+			// A task arrived - dispatch it to the right handler.
 			w.process(task)
 		case <-ctx.Done():
-			// Shutdown signal received — exit the loop cleanly.
+			// Shutdown signal received - exit the loop cleanly.
 			slog.Info("worker stopped")
 			return
 		}
@@ -112,6 +112,8 @@ func (w *Worker) process(task Task) {
 		w.handleShowTimezones(task)
 	case TaskSetTimezone:
 		w.handleSetTimezone(task)
+	case TaskUnseen:
+		w.handleUnseen(task)
 	default:
 		slog.Warn("unknown task type", "type", task.Type)
 	}
@@ -122,7 +124,7 @@ func (w *Worker) process(task Task) {
 func (w *Worker) HasPendingInput(chatID int64) bool {
 	w.mu.Lock()
 	// defer ensures Unlock runs when the function returns, even on early returns.
-	// Like Python's "with lock:" or C#'s "lock(mu) { ... }" — guarantees release.
+	// Like Python's "with lock:" or C#'s "lock(mu) { ... }" - guarantees release.
 	defer w.mu.Unlock()
 	_, exists := w.pendingInputs[chatID]
 	return exists

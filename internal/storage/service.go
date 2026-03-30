@@ -2,10 +2,11 @@ package storage
 
 // Service defines all database operations the application needs.
 // Other packages depend on this interface, not on GORM directly.
-// Any struct whose methods match this list satisfies the interface automatically —
+// Any struct whose methods match this list satisfies the interface automatically -
 // no "implements" keyword needed (this is called "structural typing").
 type Service interface {
 	GetUserByTelegramID(telegramID int64) (*User, error)
+	GetUserByUsername(username string) (*User, error)
 	GetNotificationByID(id uint) (*Notification, error)
 	GetNotificationByMessageID(messageID int) (*Notification, error)
 	CreateUser(user *User) error
@@ -22,18 +23,18 @@ type Service interface {
 	GetDistinctChatIDs() ([]int64, error)
 	GetUsersByChatID(chatID int64) ([]User, error)
 
-	// WatchStatus methods — track per-user watched state on episode notifications
+	// WatchStatus methods - track per-user watched state on episode notifications
 	CreateWatchStatuses(notificationID uint, userIDs []uint) error
 	GetWatchStatuses(notificationID uint) ([]WatchStatus, error)
 	GetUserWatchStatus(notificationID uint, userID uint) (WatchStatus, error)
 	GetUnwatchedStatusesByUser(userID uint) ([]WatchStatus, error)
 	MarkWatchStatus(notificationID uint, userID uint) error
 
-	// ChatConfig methods — per-chat settings (country, timezone, deletion toggle)
+	// ChatConfig methods - per-chat settings (country, timezone, deletion toggle)
 	GetChatConfig(chatID int64) (*ChatConfig, error)
 	CreateOrUpdateChatConfig(config *ChatConfig) error
 
-	// ScheduledDeletion methods — deferred message cleanup
+	// ScheduledDeletion methods - deferred message cleanup
 	CreateScheduledDeletion(deletion *ScheduledDeletion) error
 	GetPendingDeletions() ([]ScheduledDeletion, error)
 	RemoveScheduledDeletion(id uint) error

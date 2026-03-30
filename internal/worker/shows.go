@@ -54,7 +54,7 @@ func (w *Worker) handleShows(task Task) {
 // them into a deduplicated list sorted alphabetically by show title.
 func (w *Worker) collectFollowedShows(users []storage.User) []followedShow {
 	// showMap keys on the show title, grouping all users who follow it.
-	// Using a map here deduplicates shows across users automatically —
+	// Using a map here deduplicates shows across users automatically -
 	// like defaultdict(list) in Python.
 	showMap := make(map[string]*followedShow)
 
@@ -66,7 +66,7 @@ func (w *Worker) collectFollowedShows(users []storage.User) []followedShow {
 		}
 
 		for _, entry := range entries {
-			// Skip shows that are no longer airing — only keep "returning series"
+			// Skip shows that are no longer airing - only keep "returning series"
 			if entry.Show.Status != trakt.ShowStatusReturning {
 				continue
 			}

@@ -151,7 +151,7 @@ func (c *Client) GetWatchlistShows(accessToken string) (map[int]bool, error) {
 		return nil, fmt.Errorf("decoding watchlist response: %w", err)
 	}
 
-	// Build a set using map[int]bool — like a set() in Python
+	// Build a set using map[int]bool - like a set() in Python
 	watchlist := make(map[int]bool, len(entries))
 	for _, entry := range entries {
 		watchlist[entry.Show.IDs.Trakt] = true
@@ -261,7 +261,7 @@ func (c *Client) PollForToken(deviceCode string) (*Token, error) {
 }
 
 // MarkEpisodeWatched tells Trakt the user has watched a specific episode.
-// Uses: POST /sync/history — expects 201 Created on success.
+// Uses: POST /sync/history - expects 201 Created on success.
 func (c *Client) MarkEpisodeWatched(accessToken string, traktShowID, season, episodeNumber int) error {
 	// Build the nested request body: shows → seasons → episodes
 	reqBody := SyncHistoryRequest{
