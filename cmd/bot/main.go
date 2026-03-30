@@ -9,6 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	// Embeds the IANA timezone database into the binary so time.LoadLocation
+	// works even in minimal containers (like distroless) that lack /usr/share/zoneinfo.
+	// The blank identifier _ means "import for side effects only" - its init() registers
+	// the embedded data with the time package, similar to Python's import-for-side-effects pattern.
+	_ "time/tzdata"
+
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/telegram"
 	"github.com/loraine/traktv-tg-bot/internal/tmdb"
