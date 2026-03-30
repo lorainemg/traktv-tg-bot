@@ -211,9 +211,9 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 
 <b>Commands</b>
 /auth — Link your <a href="https://trakt.tv">Trakt.tv</a> account so I can track your shows
-/upcoming — See what's airing in the next 7 days
+/upcoming [days] — See what's airing soon (default: 7 days, max: 31)
 /shows — See all followed shows and who's watching them
-/register_topic genre — Route episode notifications of a genre to this group topic
+/register_topic &lt;genre&gt; — Route episode notifications of a genre to this group topic
 /config — Chat settings: country, timezone, auto-delete watched notifications
 /mute — Take a break from episode notifications
 /unmute — Turn notifications back on
@@ -299,11 +299,32 @@ func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *m
 	})
 }
 
-// handleUpcoming submits a task to list upcoming episodes for the next 7 days.
+// handleUpcoming parses an optional "days" argument and submits
+// a task to list upcoming episodes for that many days (default 7).
 func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	_, daysTxt, _ := strings.Cut(update.Message.Text, " ")
+	daysTxt = strings.TrimSpace(daysTxt)
+	days := 7
+
+	if daysTxt != "" {
+		// var declares err without assigning — needed so we can use = (not :=) for days.
+		// Using := here would create a NEW days scoped to this if-block, shadowing the outer one.
+		var err error
+		days, err = strconv.Atoi(daysTxt)
+		if err != nil || days < 1 || days > 31 {
+			_, _ = tgBot.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          update.Message.Chat.ID,
+				MessageThreadID: update.Message.MessageThreadID,
+				Text:            "Usage: /upcoming [days]\nExample: /upcoming 14 or /upcoming",
+			})
+			return
+		}
+	}
+
 	b.worker.Submit(worker.Task{
-		Type:   worker.TaskUpcoming,
-		ChatID: update.Message.Chat.ID,
+		Type:    worker.TaskUpcoming,
+		ChatID:  update.Message.Chat.ID,
+		Payload: days,
 	})
 }
 

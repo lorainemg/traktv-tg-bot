@@ -19,10 +19,17 @@ type upcomingEpisode struct {
 	Users []storage.User
 }
 
-// handleUpcoming fetches the next 7 days of episodes for all users in the chat,
+// handleUpcoming fetches upcoming episodes for all users in the chat,
 // groups them by show+episode, and sends a single summary message.
 func (w *Worker) handleUpcoming(task Task) {
 	chatID := task.ChatID
+
+	// Type-assert the Payload to int. The comma-ok form (value, ok) avoids
+	// a panic if the type doesn't match — like a safe cast in C#.
+	days, ok := task.Payload.(int)
+	if !ok || days < 1 {
+		days = 7
+	}
 
 	users, err := w.store.GetUsersByChatID(chatID)
 	if err != nil {
@@ -44,17 +51,17 @@ func (w *Worker) handleUpcoming(task Task) {
 	}
 
 	today := time.Now().Format("2006-01-02")
-	episodes := w.collectUpcomingEpisodes(users, today)
+	episodes := w.collectUpcomingEpisodes(users, today, days)
 
 	if len(episodes) == 0 {
 		w.results <- Result{
 			ChatID: chatID,
-			Text:   "No upcoming episodes in the next 7 days.",
+			Text:   fmt.Sprintf("No upcoming episodes in the next %d days.", days),
 		}
 		return
 	}
 
-	msg := formatUpcomingMessage(episodes, settings.location)
+	msg := formatUpcomingMessage(episodes, settings.location, days)
 
 	w.results <- Result{
 		ChatID: chatID,
@@ -64,7 +71,7 @@ func (w *Worker) handleUpcoming(task Task) {
 
 // collectUpcomingEpisodes fetches calendars from all users and merges them,
 // tracking which users follow each episode's show.
-func (w *Worker) collectUpcomingEpisodes(users []storage.User, today string) []upcomingEpisode {
+func (w *Worker) collectUpcomingEpisodes(users []storage.User, today string, days int) []upcomingEpisode {
 	// Map from episode key → upcomingEpisode (entry + list of users)
 	episodeMap := make(map[string]*upcomingEpisode)
 
@@ -75,7 +82,7 @@ func (w *Worker) collectUpcomingEpisodes(users []storage.User, today string) []u
 			watchlistShows = nil
 		}
 
-		entries, err := w.trakt.GetCalendar(user.TraktAccessToken, today, 7)
+		entries, err := w.trakt.GetCalendar(user.TraktAccessToken, today, days)
 		if err != nil {
 			slog.Error("upcoming: failed to fetch calendar", "user_id", user.ID, "error", err)
 			continue
@@ -116,8 +123,8 @@ func sortUpcomingEpisodes(episodeMap map[string]*upcomingEpisode) []upcomingEpis
 	return episodes
 }
 
-func formatUpcomingMessage(episodes []upcomingEpisode, loc *time.Location) string {
-	header := "📅 *Upcoming episodes*\n\n"
+func formatUpcomingMessage(episodes []upcomingEpisode, loc *time.Location, days int) string {
+	header := fmt.Sprintf("📅 *Upcoming episodes (%d days)*\n\n", days)
 
 	shows := make([]string, 0, len(episodes))
 	for _, ep := range episodes {
