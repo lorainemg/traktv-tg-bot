@@ -24,6 +24,10 @@ RUN go build -o bot ./cmd/bot
 # ── Production stage: minimal image with just the binary ──
 FROM alpine:3.20 AS prod
 
+# Install timezone database - Alpine doesn't include it by default,
+# and Go's time.LoadLocation needs it to resolve timezone names like "America/New_York".
+RUN apk add --no-cache tzdata
+
 WORKDIR /app
 COPY --from=builder /app/bot .
 
