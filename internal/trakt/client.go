@@ -160,6 +160,28 @@ func (c *Client) GetWatchlistShows(accessToken string) (map[int]bool, error) {
 	return watchlist, nil
 }
 
+// GetWatchedShows fetches shows the user has actually started watching
+// (at least one episode watched). Returns full show details plus play counts.
+// Uses: GET /users/me/watched/shows
+func (c *Client) GetWatchedShows(accessToken string) ([]WatchedShowEntry, error) {
+	resp, err := c.do(http.MethodGet, "/users/me/watched/shows?extended=full", accessToken, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching watched shows: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetching watched shows: unexpected status %d", resp.StatusCode)
+	}
+
+	var entries []WatchedShowEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("decoding watched shows response: %w", err)
+	}
+
+	return entries, nil
+}
+
 // GetWatchHistory fetches the user's recent episode watch history from Trakt.
 // startAt limits results to watches after this ISO 8601 timestamp, so we only
 // get recent activity instead of the user's entire history.

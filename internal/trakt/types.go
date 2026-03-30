@@ -1,5 +1,20 @@
 package trakt
 
+import "fmt"
+
+// ShowStatus is a typed string for the status field Trakt returns on shows.
+// Using a named type instead of bare string makes valid values discoverable
+// and lets the compiler catch typos when comparing — like a string literal
+// union type in TypeScript (e.g. type ShowStatus = "returning series" | "ended").
+type ShowStatus string
+
+const (
+	ShowStatusReturning  ShowStatus = "returning series"
+	ShowStatusEnded      ShowStatus = "ended"
+	ShowStatusCanceled   ShowStatus = "canceled"
+	ShowStatusInProgress ShowStatus = "in production"
+)
+
 // CalendarEntry represents one item from the Trakt calendar API response.
 type CalendarEntry struct {
 	FirstAired string  `json:"first_aired"`
@@ -15,11 +30,18 @@ type Episode struct {
 
 type Show struct {
 	Title   string     `json:"title"`
+	Status  ShowStatus `json:"status"`  // e.g. "returning series", "ended", "canceled" — from extended=full
 	Genres  []string   `json:"genres"`  // e.g. ["anime", "drama"] — lowercase strings from extended=full
 	IDs     ShowIDs    `json:"ids"`     // external identifiers — populated when using ?extended=full
 	Rating  float64    `json:"rating"`  // Trakt community rating (0-10), also from extended=full
 	Runtime int        `json:"runtime"` // typical episode length in minutes — from extended=full
 	Images  ShowImages `json:"images"`  // poster, fanart, etc. — from extended=full
+}
+
+// TraktLink returns a Markdown link to the show's Trakt page,
+// e.g. [Breaking Bad](https://trakt.tv/shows/breaking-bad).
+func (s Show) TraktLink() string {
+	return fmt.Sprintf("[%s](https://trakt.tv/shows/%s)", s.Title, s.IDs.Slug)
 }
 
 // ShowImages holds image URLs returned by Trakt when using ?extended=full.
@@ -34,6 +56,15 @@ type ShowImages struct {
 // We only need the show's IDs to build an exclusion set.
 type WatchlistEntry struct {
 	Show Show `json:"show"`
+}
+
+// WatchedShowEntry represents one item from GET /users/me/watched/shows.
+// Unlike WatchlistEntry (shows you plan to watch), this is a show you've
+// actually started — Trakt returns it once you've watched at least one episode.
+type WatchedShowEntry struct {
+	Plays         int    `json:"plays"`           // total episodes watched across all seasons
+	LastWatchedAt string `json:"last_watched_at"` // ISO 8601 timestamp of most recent watch
+	Show          Show   `json:"show"`
 }
 
 // ShowIDs holds the cross-platform identifiers that Trakt returns for a show.

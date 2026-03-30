@@ -48,6 +48,7 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	// this lets us capture the argument after the command (e.g. "/register_topic anime").
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/register_topic", bot.MatchTypePrefix, b.handleRegisterTopic)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/upcoming", bot.MatchTypeExact, b.handleUpcoming)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/shows", bot.MatchTypeExact, b.handleShows)
 	// MatchTypePrefix so "/mute@BotName" in group chats still matches.
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/mute", bot.MatchTypePrefix, b.handleMute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
@@ -261,6 +262,14 @@ func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *m
 func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
 		Type:   worker.TaskUpcoming,
+		ChatID: update.Message.Chat.ID,
+	})
+}
+
+// handleShows submits a task to list all followed shows in this chat.
+func (b *Bot) handleShows(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	b.worker.Submit(worker.Task{
+		Type:   worker.TaskShows,
 		ChatID: update.Message.Chat.ID,
 	})
 }

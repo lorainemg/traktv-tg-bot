@@ -121,8 +121,8 @@ func formatUpcomingMessage(episodes []upcomingEpisode, loc *time.Location) strin
 		}
 
 		episodeCode := formatEpisodeCode(ep.Entry.Episode.Season, ep.Entry.Episode.Number)
-		shows = append(shows, fmt.Sprintf("• *%s* · %s (in %s)\n  %s",
-			ep.Entry.Show.Title, episodeCode, formatTimeUntil(ep.Entry.FirstAired), strings.Join(users, ", ")))
+		shows = append(shows, fmt.Sprintf("• %s · %s (in %s)\n  %s",
+			ep.Entry.Show.TraktLink(), episodeCode, formatTimeUntil(ep.Entry.FirstAired), strings.Join(users, ", ")))
 	}
 
 	return header + strings.Join(shows, "\n\n")
