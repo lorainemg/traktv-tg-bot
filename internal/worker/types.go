@@ -28,9 +28,21 @@ const (
 
 // Task represents a unit of work submitted to the worker queue.
 type Task struct {
-	Type    TaskType
-	ChatID  int64 // where to send Telegram responses
-	Payload any   // extra data, varies by task type (like interface{} - accepts any value)
+	Type     TaskType
+	ChatID   int64 // where to send Telegram responses
+	ThreadID int   // forum topic thread ID - 0 means General/default topic
+	Payload  any   // extra data, varies by task type (like interface{} - accepts any value)
+}
+
+// TextResult builds a Result pre-filled with the task's ChatID and ThreadID.
+// Covers the common case where a handler just needs to send a text reply
+// back to the same chat and topic the command came from.
+func (t Task) TextResult(text string) Result {
+	return Result{
+		ChatID:   t.ChatID,
+		ThreadID: t.ThreadID,
+		Text:     text,
+	}
 }
 
 // InlineButton describes a single inline keyboard button.

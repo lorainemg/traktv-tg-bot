@@ -19,7 +19,6 @@ type unseenShow struct {
 // handleUnseen resolves the target user, fetches their watched shows from Trakt,
 // computes how many unseen episodes each show has, and sends a summary.
 func (w *Worker) handleUnseen(task Task) {
-	chatID := task.ChatID
 	payload := task.Payload.(UnseenPayload)
 
 	user, err := w.resolveUnseenTarget(payload)
@@ -28,37 +27,25 @@ func (w *Worker) handleUnseen(task Task) {
 		return
 	}
 	if user == nil {
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   "That user hasn't linked their Trakt account yet. They need to /auth first.",
-		}
+		w.results <- task.TextResult("That user hasn't linked their Trakt account yet. They need to /auth first.")
 		return
 	}
 
 	entries, err := w.trakt.GetWatchedShows(user.TraktAccessToken)
 	if err != nil {
 		slog.Error("unseen: failed to fetch watched shows", "user_id", user.ID, "error", err)
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   "Failed to fetch shows from Trakt. Try again later.",
-		}
+		w.results <- task.TextResult("Failed to fetch shows from Trakt. Try again later.")
 		return
 	}
 
 	shows := collectUnseenShows(entries)
 
 	if len(shows) == 0 {
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   fmt.Sprintf("%s is all caught up! No unseen episodes.", user.MentionLink()),
-		}
+		w.results <- task.TextResult(fmt.Sprintf("%s is all caught up! No unseen episodes.", user.MentionLink()))
 		return
 	}
 
-	w.results <- Result{
-		ChatID: chatID,
-		Text:   formatUnseenMessage(user, shows),
-	}
+	w.results <- task.TextResult(formatUnseenMessage(user, shows))
 }
 
 // resolveUnseenTarget determines which user to look up unseen episodes for.

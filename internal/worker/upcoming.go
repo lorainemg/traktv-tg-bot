@@ -37,10 +37,7 @@ func (w *Worker) handleUpcoming(task Task) {
 		return
 	}
 	if len(users) == 0 {
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   "No authenticated users in this chat. Use /auth first.",
-		}
+		w.results <- task.TextResult("No authenticated users in this chat. Use /auth first.")
 		return
 	}
 
@@ -54,19 +51,13 @@ func (w *Worker) handleUpcoming(task Task) {
 	episodes := w.collectUpcomingEpisodes(users, today, days)
 
 	if len(episodes) == 0 {
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   fmt.Sprintf("No upcoming episodes in the next %d days.", days),
-		}
+		w.results <- task.TextResult(fmt.Sprintf("No upcoming episodes in the next %d days.", days))
 		return
 	}
 
 	msg := formatUpcomingMessage(episodes, settings.location, days)
 
-	w.results <- Result{
-		ChatID: chatID,
-		Text:   msg,
-	}
+	w.results <- task.TextResult(msg)
 }
 
 // collectUpcomingEpisodes fetches calendars from all users and merges them,

@@ -224,6 +224,7 @@ Just /auth to get started and I'll handle the rest!`
 
 	_, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:             update.Message.Chat.ID,
+		MessageThreadID:    update.Message.MessageThreadID,
 		Text:               helpText,
 		ParseMode:          models.ParseModeHTML,
 		LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: bot.True()},
@@ -237,6 +238,7 @@ Just /auth to get started and I'll handle the rest!`
 func (b *Bot) handleStart(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	_, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:             update.Message.Chat.ID,
+		MessageThreadID:    update.Message.MessageThreadID,
 		Text:               "Hey! I'm your TV show companion. I'll keep you posted when new episodes air and track what everyone's watching.\n\nGet started by linking your [Trakt.tv](https://trakt.tv) account with /auth, or check /help to see everything I can do.",
 		ParseMode:          models.ParseModeMarkdownV1,
 		LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: bot.True()},
@@ -250,8 +252,9 @@ func (b *Bot) handleStart(ctx context.Context, tgBot *bot.Bot, update *models.Up
 // Trakt OAuth device flow (request code, poll for token, save user).
 func (b *Bot) handleAuth(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
-		Type:   worker.TaskStartAuth,
-		ChatID: update.Message.Chat.ID,
+		Type:     worker.TaskStartAuth,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
 		Payload: worker.AuthPayload{
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
@@ -291,8 +294,9 @@ func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *m
 	}
 
 	b.worker.Submit(worker.Task{
-		Type:   worker.TaskRegisterTopic,
-		ChatID: msg.Chat.ID,
+		Type:     worker.TaskRegisterTopic,
+		ChatID:   msg.Chat.ID,
+		ThreadID: msg.MessageThreadID,
 		Payload: worker.TopicPayload{
 			ChatID:   msg.Chat.ID,
 			ThreadID: msg.MessageThreadID,
@@ -324,25 +328,28 @@ func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models
 	}
 
 	b.worker.Submit(worker.Task{
-		Type:    worker.TaskUpcoming,
-		ChatID:  update.Message.Chat.ID,
-		Payload: days,
+		Type:     worker.TaskUpcoming,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
+		Payload:  days,
 	})
 }
 
 // handleShows submits a task to list all followed shows in this chat.
 func (b *Bot) handleShows(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
-		Type:   worker.TaskShows,
-		ChatID: update.Message.Chat.ID,
+		Type:     worker.TaskShows,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
 	})
 }
 
 // handleMute submits a task to stop episode notifications for the calling user.
 func (b *Bot) handleMute(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
-		Type:   worker.TaskSetMuted,
-		ChatID: update.Message.Chat.ID,
+		Type:     worker.TaskSetMuted,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
 		Payload: worker.MutePayload{
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
@@ -354,8 +361,9 @@ func (b *Bot) handleMute(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 // handleUnmute submits a task to resume episode notifications for the calling user.
 func (b *Bot) handleUnmute(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
-		Type:   worker.TaskSetMuted,
-		ChatID: update.Message.Chat.ID,
+		Type:     worker.TaskSetMuted,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
 		Payload: worker.MutePayload{
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
@@ -367,6 +375,7 @@ func (b *Bot) handleUnmute(ctx context.Context, tgBot *bot.Bot, update *models.U
 // handleConfigCallback routes config inline button clicks to the appropriate task.
 func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 	action := strings.TrimPrefix(cq.Data, "config:")
+	threadID := cq.Message.Message.MessageThreadID
 	payload := worker.ConfigCallbackPayload{
 		ChatID:          cq.Message.Message.Chat.ID,
 		CallbackQueryID: cq.ID,
@@ -376,28 +385,32 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 	switch {
 	case action == "delete":
 		b.worker.Submit(worker.Task{
-			Type:    worker.TaskToggleDeleteWatched,
-			ChatID:  payload.ChatID,
-			Payload: payload,
+			Type:     worker.TaskToggleDeleteWatched,
+			ChatID:   payload.ChatID,
+			ThreadID: threadID,
+			Payload:  payload,
 		})
 	case action == "country":
 		b.worker.Submit(worker.Task{
-			Type:    worker.TaskPromptCountry,
-			ChatID:  payload.ChatID,
-			Payload: payload,
+			Type:     worker.TaskPromptCountry,
+			ChatID:   payload.ChatID,
+			ThreadID: threadID,
+			Payload:  payload,
 		})
 	case action == "timezone":
 		b.worker.Submit(worker.Task{
-			Type:    worker.TaskShowTimezones,
-			ChatID:  payload.ChatID,
-			Payload: payload,
+			Type:     worker.TaskShowTimezones,
+			ChatID:   payload.ChatID,
+			ThreadID: threadID,
+			Payload:  payload,
 		})
 	case strings.HasPrefix(action, "tz:"):
 		// User picked a specific timezone from the button list.
 		// Callback data format: "config:tz:America/New_York"
 		b.worker.Submit(worker.Task{
-			Type:   worker.TaskSetTimezone,
-			ChatID: cq.Message.Message.Chat.ID,
+			Type:     worker.TaskSetTimezone,
+			ChatID:   cq.Message.Message.Chat.ID,
+			ThreadID: threadID,
 			Payload: worker.TimezonePayload{
 				ChatID:          cq.Message.Message.Chat.ID,
 				CallbackQueryID: cq.ID,
@@ -430,17 +443,19 @@ func (b *Bot) handleUnseen(ctx context.Context, tgBot *bot.Bot, update *models.U
 	}
 
 	b.worker.Submit(worker.Task{
-		Type:    worker.TaskUnseen,
-		ChatID:  msg.Chat.ID,
-		Payload: payload,
+		Type:     worker.TaskUnseen,
+		ChatID:   msg.Chat.ID,
+		ThreadID: msg.MessageThreadID,
+		Payload:  payload,
 	})
 }
 
 // handleConfig submits a task to display the current chat settings.
 func (b *Bot) handleConfig(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
-		Type:   worker.TaskShowConfig,
-		ChatID: update.Message.Chat.ID,
+		Type:     worker.TaskShowConfig,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
 	})
 }
 
@@ -482,8 +497,9 @@ func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.
 		chatID := update.Message.Chat.ID
 		if b.worker.HasPendingInput(chatID) {
 			b.worker.Submit(worker.Task{
-				Type:   worker.TaskTextInput,
-				ChatID: chatID,
+				Type:     worker.TaskTextInput,
+				ChatID:   chatID,
+				ThreadID: update.Message.MessageThreadID,
 				Payload: worker.TextInputPayload{
 					ChatID: chatID,
 					Text:   update.Message.Text,
@@ -508,8 +524,9 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 			return
 		}
 		b.worker.Submit(worker.Task{
-			Type:   worker.TaskMarkWatched,
-			ChatID: cq.Message.Message.Chat.ID,
+			Type:     worker.TaskMarkWatched,
+			ChatID:   cq.Message.Message.Chat.ID,
+			ThreadID: cq.Message.Message.MessageThreadID,
 			Payload: worker.MarkWatchedPayload{
 				TelegramID:      cq.From.ID,
 				ChatID:          cq.Message.Message.Chat.ID,

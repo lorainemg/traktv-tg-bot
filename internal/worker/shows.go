@@ -27,27 +27,18 @@ func (w *Worker) handleShows(task Task) {
 		return
 	}
 	if len(users) == 0 {
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   "No authenticated users in this chat. Use /auth first.",
-		}
+		w.results <- task.TextResult("No authenticated users in this chat. Use /auth first.")
 		return
 	}
 
 	shows := w.collectFollowedShows(users)
 
 	if len(shows) == 0 {
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   "No one in this chat is watching any shows yet.",
-		}
+		w.results <- task.TextResult("No one in this chat is watching any shows yet.")
 		return
 	}
 
-	w.results <- Result{
-		ChatID: chatID,
-		Text:   formatShowsMessage(shows),
-	}
+	w.results <- task.TextResult(formatShowsMessage(shows))
 }
 
 // collectFollowedShows fetches each user's watched shows from Trakt and merges

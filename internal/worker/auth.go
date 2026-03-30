@@ -20,10 +20,7 @@ func (w *Worker) handleStartAuth(task Task) {
 	existing, err := w.store.GetUserByTelegramID(payload.TelegramID)
 	if err != nil {
 		slog.Error("failed to look up existing user", "error", err)
-		w.results <- Result{
-			ChatID: task.ChatID,
-			Text:   "Something went wrong. Please try again.",
-		}
+		w.results <- task.TextResult("Something went wrong. Please try again.")
 		return
 	}
 
@@ -45,10 +42,7 @@ func (w *Worker) handleStartAuth(task Task) {
 // their notifications here and sends a farewell to the old chat.
 func (w *Worker) handleExistingUserAuth(task Task, payload AuthPayload, existing *storage.User) {
 	if existing.ChatID == task.ChatID {
-		w.results <- Result{
-			ChatID: task.ChatID,
-			Text:   "You are already authenticated in this chat!",
-		}
+		w.results <- task.TextResult("You are already authenticated in this chat!")
 		return
 	}
 
@@ -60,17 +54,11 @@ func (w *Worker) handleExistingUserAuth(task Task, payload AuthPayload, existing
 
 	if err := w.store.UpdateUserChatID(payload.TelegramID, task.ChatID); err != nil {
 		slog.Error("failed to update user chat ID", "error", err)
-		w.results <- Result{
-			ChatID: task.ChatID,
-			Text:   "Failed to move notifications. Please try again.",
-		}
+		w.results <- task.TextResult("Failed to move notifications. Please try again.")
 		return
 	}
 
-	w.results <- Result{
-		ChatID: task.ChatID,
-		Text:   "Trakt account already linked! Notifications will now be sent here.",
-	}
+	w.results <- task.TextResult("Trakt account already linked! Notifications will now be sent here.")
 }
 
 // handleNewUserAuth starts the Trakt OAuth device code flow for a first-time user.
@@ -78,35 +66,31 @@ func (w *Worker) handleNewUserAuth(task Task, payload AuthPayload) {
 	dc, err := w.trakt.RequestDeviceCode()
 	if err != nil {
 		slog.Error("failed to request device code", "error", err)
-		w.results <- Result{
-			ChatID: task.ChatID,
-			Text:   "Failed to start Trakt auth. Please try again.",
-		}
+		w.results <- task.TextResult("Failed to start Trakt auth. Please try again.")
 		return
 	}
 
-	w.results <- Result{
-		ChatID: task.ChatID,
-		Text:   fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode),
-	}
+	w.results <- task.TextResult(fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode))
 
 	// Poll in a goroutine so we don't block the worker loop.
-	go w.pollForToken(task.ChatID, payload, dc.DeviceCode, dc.Interval)
+	go w.pollForToken(task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval)
 }
 
 // pollForToken repeatedly checks if the user has authorized the device code.
 // Runs as a separate goroutine so the worker's main loop stays free.
-func (w *Worker) pollForToken(chatID int64, payload AuthPayload, deviceCode string, intervalSecs int) {
+func (w *Worker) pollForToken(chatID int64, threadID int, payload AuthPayload, deviceCode string, intervalSecs int) {
+	// Build a minimal Task so we can use TextResult inside this goroutine.
+	// pollForToken runs outside the worker loop, so it doesn't have the
+	// original task - we reconstruct just enough to build Results.
+	t := Task{ChatID: chatID, ThreadID: threadID}
+
 	ticker := time.NewTicker(time.Duration(intervalSecs) * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		token, err := w.trakt.PollForToken(deviceCode)
 		if err != nil {
-			w.results <- Result{
-				ChatID: chatID,
-				Text:   fmt.Sprintf("Trakt auth failed: %v", err),
-			}
+			w.results <- t.TextResult(fmt.Sprintf("Trakt auth failed: %v", err))
 			return
 		}
 		// nil token means "not authorized yet" - keep polling
@@ -125,17 +109,11 @@ func (w *Worker) pollForToken(chatID int64, payload AuthPayload, deviceCode stri
 		})
 		if err != nil {
 			slog.Error("failed to save user", "error", err)
-			w.results <- Result{
-				ChatID: chatID,
-				Text:   "Failed to save Trakt account. Please try again.",
-			}
+			w.results <- t.TextResult("Failed to save Trakt account. Please try again.")
 			return
 		}
 
-		w.results <- Result{
-			ChatID: chatID,
-			Text:   "Trakt account linked!",
-		}
+		w.results <- t.TextResult("Trakt account linked!")
 		return
 	}
 }

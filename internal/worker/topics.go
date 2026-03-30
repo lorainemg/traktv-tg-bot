@@ -28,11 +28,7 @@ func (w *Worker) handleRegisterTopic(task Task) {
 		return
 	}
 	if !registered {
-		w.results <- Result{
-			ChatID:   payload.ChatID,
-			ThreadID: payload.ThreadID,
-			Text:     "No authenticated users in this chat. Use /auth first.",
-		}
+		w.results <- task.TextResult("No authenticated users in this chat. Use /auth first.")
 		return
 	}
 
@@ -44,17 +40,9 @@ func (w *Worker) handleRegisterTopic(task Task) {
 
 	if err := w.store.CreateOrUpdateTopic(topic); err != nil {
 		slog.Error("failed to register topic", "error", err)
-		w.results <- Result{
-			ChatID:   payload.ChatID,
-			ThreadID: payload.ThreadID,
-			Text:     "Failed to register topic. Please try again.",
-		}
+		w.results <- task.TextResult("Failed to register topic. Please try again.")
 		return
 	}
 
-	w.results <- Result{
-		ChatID:   payload.ChatID,
-		ThreadID: payload.ThreadID,
-		Text:     fmt.Sprintf("Topic registered as *%s*. Episode notifications matching this category will be sent here.", payload.Name),
-	}
+	w.results <- task.TextResult(fmt.Sprintf("Topic registered as *%s*. Episode notifications matching this category will be sent here.", payload.Name))
 }

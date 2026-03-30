@@ -24,12 +24,12 @@ func (w *Worker) handleShowConfig(task Task) {
 	config, err := w.store.GetChatConfig(task.ChatID)
 	if err != nil {
 		slog.Error("failed to fetch chat config", "error", err, "chat_id", task.ChatID)
-		w.results <- Result{ChatID: task.ChatID, Text: "Something went wrong, please try again."}
+		w.results <- task.TextResult("Something went wrong, please try again.")
 		return
 	}
 
 	country, timezone, deleteWatched := resolveConfig(config)
-	w.results <- buildConfigResult(task.ChatID, 0, country, timezone, deleteWatched)
+	w.results <- buildConfigResult(task.ChatID, task.ThreadID, 0, country, timezone, deleteWatched)
 }
 
 // handleToggleDeleteWatched flips the DeleteWatched setting and edits
@@ -72,7 +72,7 @@ func (w *Worker) handleToggleDeleteWatched(task Task) {
 	}
 
 	// Edit the config message to show updated values
-	w.results <- buildConfigResult(payload.ChatID, payload.MessageID, country, timezone, deleteWatched)
+	w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, timezone, deleteWatched)
 }
 
 // handlePromptCountry sets up pending input and sends a prompt asking for a country code.
@@ -101,6 +101,7 @@ func (w *Worker) handlePromptCountry(task Task) {
 	// privacy mode enabled (bots always receive replies to their own messages).
 	w.results <- Result{
 		ChatID:                payload.ChatID,
+		ThreadID:              task.ThreadID,
 		Text:                  "Reply to this message with a 2-letter country code (e.g. `US`, `GB`, `BR`)",
 		ForceReply:            true,
 		InputFieldPlaceholder: "e.g. US, GB, BR",
@@ -154,7 +155,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 			CallbackQueryID: payload.CallbackQueryID,
 			Text:            fmt.Sprintf("Timezone set to %s", timezones[0]),
 		}
-		w.results <- buildConfigResult(payload.ChatID, payload.MessageID, country, timezones[0], deleteWatched)
+		w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, timezones[0], deleteWatched)
 		return
 	}
 
@@ -175,6 +176,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 
 	w.results <- Result{
 		ChatID:        payload.ChatID,
+		ThreadID:      task.ThreadID,
 		EditMessageID: payload.MessageID,
 		Text:          fmt.Sprintf("Select a timezone for *%s*:", country),
 		InlineButtons: buttons,
@@ -215,7 +217,7 @@ func (w *Worker) handleSetTimezone(task Task) {
 	}
 
 	// Replace the timezone picker with the updated config message
-	w.results <- buildConfigResult(payload.ChatID, payload.MessageID, country, payload.Timezone, deleteWatched)
+	w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, payload.Timezone, deleteWatched)
 }
 
 // handleTextInput processes text messages that were sent in response to a pending prompt.
@@ -233,19 +235,20 @@ func (w *Worker) handleTextInput(task Task) {
 
 	switch pending.action {
 	case "country":
-		w.handleCountryInput(payload, pending)
+		w.handleCountryInput(task.ThreadID, payload, pending)
 	}
 }
 
 // handleCountryInput validates and saves a country code from user text input.
-func (w *Worker) handleCountryInput(payload TextInputPayload, pending pendingInput) {
+func (w *Worker) handleCountryInput(threadID int, payload TextInputPayload, pending pendingInput) {
 	// Normalize: trim whitespace and uppercase
 	country := strings.TrimSpace(strings.ToUpper(payload.Text))
 
 	if len(country) != 2 {
 		w.results <- Result{
-			ChatID: payload.ChatID,
-			Text:   "That doesn't look like a 2-letter country code. Try again with /config.",
+			ChatID:   payload.ChatID,
+			ThreadID: threadID,
+			Text:     "That doesn't look like a 2-letter country code. Try again with /config.",
 		}
 		return
 	}
@@ -267,12 +270,12 @@ func (w *Worker) handleCountryInput(payload TextInputPayload, pending pendingInp
 	})
 	if err != nil {
 		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
-		w.results <- Result{ChatID: payload.ChatID, Text: "Something went wrong, please try again."}
+		w.results <- Result{ChatID: payload.ChatID, ThreadID: threadID, Text: "Something went wrong, please try again."}
 		return
 	}
 
 	// Edit the original config message with updated values
-	w.results <- buildConfigResult(payload.ChatID, pending.messageID, country, timezone, deleteWatched)
+	w.results <- buildConfigResult(payload.ChatID, threadID, pending.messageID, country, timezone, deleteWatched)
 }
 
 // chatSettings holds the resolved config values for a chat, including a parsed
@@ -332,7 +335,7 @@ func resolveConfig(config *storage.ChatConfig) (country, timezone string, delete
 // buildConfigResult constructs a Result with the formatted settings message
 // and inline buttons. When editMessageID is non-zero, the result edits an
 // existing message instead of sending a new one.
-func buildConfigResult(chatID int64, editMessageID int, country, timezone string, deleteWatched bool) Result {
+func buildConfigResult(chatID int64, threadID int, editMessageID int, country, timezone string, deleteWatched bool) Result {
 	// Escape underscores for MarkdownV1 - characters like _ in "America/New_York"
 	// would otherwise be parsed as italic formatting markers by Telegram.
 	escapedTimezone := strings.ReplaceAll(timezone, "_", "\\_")
@@ -347,6 +350,7 @@ func buildConfigResult(chatID int64, editMessageID int, country, timezone string
 
 	return Result{
 		ChatID:        chatID,
+		ThreadID:      threadID,
 		EditMessageID: editMessageID,
 		Text:          text,
 		InlineButtons: [][]InlineButton{

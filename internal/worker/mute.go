@@ -21,17 +21,17 @@ func (w *Worker) handleSetMuted(task Task) {
 	user, err := w.store.GetUserByTelegramID(payload.TelegramID)
 	if err != nil {
 		slog.Error("failed to look up user", "error", err)
-		w.results <- Result{ChatID: payload.ChatID, Text: "Something went wrong, please try again."}
+		w.results <- task.TextResult("Something went wrong, please try again.")
 		return
 	}
 	if user == nil {
-		w.results <- Result{ChatID: payload.ChatID, Text: "You need to /auth first before using /mute."}
+		w.results <- task.TextResult("You need to /auth first before using /mute.")
 		return
 	}
 
 	err = w.store.UpdateUserMuted(payload.TelegramID, payload.Muted)
 	if err != nil {
-		w.results <- Result{ChatID: payload.ChatID, Text: fmt.Sprintf("Failed to update user: %v", err)}
+		w.results <- task.TextResult(fmt.Sprintf("Failed to update user: %v", err))
 		return
 	}
 
@@ -40,6 +40,5 @@ func (w *Worker) handleSetMuted(task Task) {
 		mutedTxt = "muted"
 	}
 	// Use a Telegram mention link so underscores in names don't break MarkdownV1.
-	w.results <- Result{ChatID: payload.ChatID, Text: fmt.Sprintf("Notifications %s for %s", mutedTxt, user.MentionLink())}
-
+	w.results <- task.TextResult(fmt.Sprintf("Notifications %s for %s", mutedTxt, user.MentionLink()))
 }
