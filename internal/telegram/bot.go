@@ -42,14 +42,12 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 		return nil, fmt.Errorf("creating telegram bot: %w", err)
 	}
 
-	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, b.handleStart)
-	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/auth", bot.MatchTypeExact, b.handleAuth)
-	// MatchTypePrefix matches any message starting with "/register_topic" —
-	// this lets us capture the argument after the command (e.g. "/register_topic anime").
+	// MatchTypePrefix so "/cmd@BotName" in group chats still matches.
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypePrefix, b.handleStart)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/auth", bot.MatchTypePrefix, b.handleAuth)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/register_topic", bot.MatchTypePrefix, b.handleRegisterTopic)
-	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/upcoming", bot.MatchTypeExact, b.handleUpcoming)
-	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/shows", bot.MatchTypeExact, b.handleShows)
-	// MatchTypePrefix so "/mute@BotName" in group chats still matches.
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/upcoming", bot.MatchTypePrefix, b.handleUpcoming)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/shows", bot.MatchTypePrefix, b.handleShows)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/mute", bot.MatchTypePrefix, b.handleMute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
 
@@ -225,9 +223,10 @@ func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *m
 	msg := update.Message
 
 	// Parse the topic name from the command text.
-	// strings.TrimPrefix removes the command prefix, leaving just the argument.
-	// For "/register_topic anime", this gives us " anime" → trimmed to "anime".
-	name := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/register_topic"))
+	// In group chats Telegram sends "/register_topic@BotName anime",
+	// so we split on the first space to skip the command (with or without @suffix).
+	_, name, _ := strings.Cut(msg.Text, " ")
+	name = strings.TrimSpace(name)
 	if name == "" {
 		_, _ = tgBot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:          msg.Chat.ID,
