@@ -88,6 +88,16 @@ type ScheduledDeletion struct {
 	DeleteAt       time.Time
 }
 
+// ChatConfig stores per-chat settings like country, timezone, and deletion preferences.
+// One row per chat — uniqueIndex on ChatID enforces this at the database level.
+type ChatConfig struct {
+	gorm.Model
+	ChatID        int64  `gorm:"uniqueIndex"` // one config per chat
+	Country       string // ISO 3166-1 alpha-2 country code, e.g. "US", "GB"
+	Timezone      string // IANA timezone, e.g. "America/New_York"
+	DeleteWatched bool   // when true, delete episode messages after all users have watched
+}
+
 // WatchStatus tracks whether a specific user has watched a notified episode.
 // This is a "join table" — it links a Notification to a User, with an extra
 // Watched flag. Used to render the "Watched by: @user ✅  @other ⏳" line

@@ -17,6 +17,12 @@ const (
 	TaskProcessDeletions                 // = 6
 	TaskUpcoming                         // = 7
 	TaskShows                            // = 8
+	TaskShowConfig                       // = 9
+	TaskToggleDeleteWatched              // = 10
+	TaskTextInput                        // = 11
+	TaskPromptCountry                    // = 12
+	TaskShowTimezones                    // = 13
+	TaskSetTimezone                      // = 14
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -58,6 +64,12 @@ type Result struct {
 	// true = modal popup the user must dismiss. Useful for errors/warnings.
 	CallbackShowAlert bool
 
+	// ForceReply, when true, tells Telegram to show a reply UI to the user.
+	// Used for prompts that expect text input — the reply ensures the bot
+	// receives the message even in group chats with privacy mode enabled.
+	ForceReply            bool
+	InputFieldPlaceholder string // hint shown in the input field, e.g. "US, GB, BR"
+
 	// InlineButtons is a 2D slice: each inner slice is one row of buttons.
 	// nil means no keyboard attached.
 	InlineButtons [][]InlineButton
@@ -83,6 +95,29 @@ type TopicPayload struct {
 	ChatID   int64
 	ThreadID int
 	Name     string // user-provided topic name, e.g. "anime"
+}
+
+// ConfigCallbackPayload carries data for config inline button callbacks.
+// Reused by all config buttons (toggle delete, change country, change timezone).
+type ConfigCallbackPayload struct {
+	ChatID          int64
+	CallbackQueryID string
+	MessageID       int // the config message to edit in-place after changes
+}
+
+// TimezonePayload carries the selected IANA timezone from an inline button callback.
+type TimezonePayload struct {
+	ChatID          int64
+	CallbackQueryID string
+	MessageID       int    // the config message to edit after saving
+	Timezone        string // IANA timezone name, e.g. "America/New_York"
+}
+
+// TextInputPayload carries a plain text message that the user sent in response
+// to a pending input prompt (e.g. typing a country code after clicking "Change Country").
+type TextInputPayload struct {
+	ChatID int64
+	Text   string // the raw text the user sent
 }
 
 // MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.

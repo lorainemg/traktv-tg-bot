@@ -37,6 +37,12 @@ func (w *Worker) handleUpcoming(task Task) {
 		return
 	}
 
+	settings, err := w.loadChatSettings(chatID)
+	if err != nil {
+		slog.Error("upcoming: failed to load chat settings", "chat_id", chatID, "error", err)
+		return
+	}
+
 	today := time.Now().Format("2006-01-02")
 	episodes := w.collectUpcomingEpisodes(users, today)
 
@@ -48,7 +54,7 @@ func (w *Worker) handleUpcoming(task Task) {
 		return
 	}
 
-	msg := formatUpcomingMessage(episodes, defaultTimezone)
+	msg := formatUpcomingMessage(episodes, settings.location)
 
 	w.results <- Result{
 		ChatID: chatID,

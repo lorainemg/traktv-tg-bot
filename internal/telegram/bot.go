@@ -51,6 +51,7 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/shows", bot.MatchTypePrefix, b.handleShows)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/mute", bot.MatchTypePrefix, b.handleMute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/config", bot.MatchTypePrefix, b.handleConfig)
 
 	b.bot = tgBot
 	return b, nil
@@ -123,10 +124,16 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 		ParseMode:          models.ParseModeMarkdownV1,
 		LinkPreviewOptions: preview,
 	}
-	// Only set ReplyMarkup when we have buttons — a nil *InlineKeyboardMarkup
-	// assigned to the ReplyMarkup interface field is non-nil in Go, which causes
-	// Telegram to reject the request with "object expected as reply markup".
-	if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
+	// Set ReplyMarkup: ForceReply takes priority (prompts user to reply),
+	// otherwise use inline keyboard buttons if present.
+	// A nil pointer assigned to the ReplyMarkup interface field is non-nil in Go,
+	// which causes Telegram to reject the request — so we only set it when needed.
+	if result.ForceReply {
+		params.ReplyMarkup = &models.ForceReply{
+			ForceReply:            true,
+			InputFieldPlaceholder: result.InputFieldPlaceholder,
+		}
+	} else if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
 		params.ReplyMarkup = kb
 	}
 	msg, err := b.bot.SendMessage(context.Background(), params)
@@ -196,10 +203,18 @@ func (b *Bot) StartResultsForwarder(ctx context.Context) {
 func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	helpText := `Hey there! Here's what I can do:
 
+<b>What happens automatically</b>
+• When a new episode airs for a show anyone here follows, I post a notification with details and streaming links
+• Each notification tracks who's watched — click "✅ Mark as Watched" to update your status (this also syncs to your Trakt account)
+• If you watch on Trakt directly, I'll pick that up too
+• Notifications can auto-delete once everyone's watched (toggle via /config)
+
+<b>Commands</b>
 /auth — Link your <a href="https://trakt.tv">Trakt.tv</a> account so I can track your shows
 /upcoming — See what's airing in the next 7 days
-/shows — Browse all the shows people are following here
+/shows — See all followed shows and who's watching them
 /register_topic genre — Route episode notifications of a genre to this group topic
+/config — Chat settings: country, timezone, auto-delete watched notifications
 /mute — Take a break from episode notifications
 /unmute — Turn notifications back on
 
@@ -326,6 +341,58 @@ func (b *Bot) handleUnmute(ctx context.Context, tgBot *bot.Bot, update *models.U
 	})
 }
 
+// handleConfigCallback routes config inline button clicks to the appropriate task.
+func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
+	action := strings.TrimPrefix(cq.Data, "config:")
+	payload := worker.ConfigCallbackPayload{
+		ChatID:          cq.Message.Message.Chat.ID,
+		CallbackQueryID: cq.ID,
+		MessageID:       cq.Message.Message.ID,
+	}
+
+	switch {
+	case action == "delete":
+		b.worker.Submit(worker.Task{
+			Type:    worker.TaskToggleDeleteWatched,
+			ChatID:  payload.ChatID,
+			Payload: payload,
+		})
+	case action == "country":
+		b.worker.Submit(worker.Task{
+			Type:    worker.TaskPromptCountry,
+			ChatID:  payload.ChatID,
+			Payload: payload,
+		})
+	case action == "timezone":
+		b.worker.Submit(worker.Task{
+			Type:    worker.TaskShowTimezones,
+			ChatID:  payload.ChatID,
+			Payload: payload,
+		})
+	case strings.HasPrefix(action, "tz:"):
+		// User picked a specific timezone from the button list.
+		// Callback data format: "config:tz:America/New_York"
+		b.worker.Submit(worker.Task{
+			Type:   worker.TaskSetTimezone,
+			ChatID: cq.Message.Message.Chat.ID,
+			Payload: worker.TimezonePayload{
+				ChatID:          cq.Message.Message.Chat.ID,
+				CallbackQueryID: cq.ID,
+				MessageID:       cq.Message.Message.ID,
+				Timezone:        strings.TrimPrefix(action, "tz:"),
+			},
+		})
+	}
+}
+
+// handleConfig submits a task to display the current chat settings.
+func (b *Bot) handleConfig(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	b.worker.Submit(worker.Task{
+		Type:   worker.TaskShowConfig,
+		ChatID: update.Message.Chat.ID,
+	})
+}
+
 // buildInlineKeyboard converts our simple InlineButton slices into Telegram's
 // InlineKeyboardMarkup type. Returns nil if there are no buttons, which means
 // "no keyboard" — Telegram will either not show one (new message) or remove an
@@ -348,11 +415,30 @@ func buildInlineKeyboard(buttons [][]worker.InlineButton) *models.InlineKeyboard
 }
 
 // handleDefault receives all updates not matched by a specific handler.
-// We use it to catch callback queries (inline button clicks), since the
-// library has no dedicated HandlerType for them.
+// We use it to catch callback queries (inline button clicks) and text
+// messages that might be responses to pending input prompts.
 func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	if update.CallbackQuery != nil {
 		b.handleCallbackQuery(ctx, update.CallbackQuery)
+		return
+	}
+
+	// Check if this is a reply to a bot prompt (e.g. "Reply with a country code").
+	// ReplyToMessage is non-nil only when the user explicitly replies to a message.
+	// Combined with HasPendingInput, this ensures we only capture replies to our
+	// own prompts — regular group conversation is never forwarded to the worker.
+	if update.Message != nil && update.Message.Text != "" && update.Message.ReplyToMessage != nil {
+		chatID := update.Message.Chat.ID
+		if b.worker.HasPendingInput(chatID) {
+			b.worker.Submit(worker.Task{
+				Type:   worker.TaskTextInput,
+				ChatID: chatID,
+				Payload: worker.TextInputPayload{
+					ChatID: chatID,
+					Text:   update.Message.Text,
+				},
+			})
+		}
 	}
 }
 
@@ -360,6 +446,11 @@ func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.
 // It parses the callback data, submits a task to the worker, and answers
 // the callback query so Telegram removes the loading spinner.
 func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery) {
+	if strings.HasPrefix(cq.Data, "config:") {
+		b.handleConfigCallback(cq)
+		return
+	}
+
 	if strings.HasPrefix(cq.Data, "watched:") {
 		notificationID, err := strconv.ParseUint(strings.TrimPrefix(cq.Data, "watched:"), 10, 64)
 		if err != nil {

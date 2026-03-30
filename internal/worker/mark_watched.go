@@ -86,7 +86,13 @@ func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notificat
 
 // updateNotificationMessage marks a user's watch status in the DB, rebuilds the
 // notification text with the updated "Watched by" line, and edits the Telegram message.
+// Respects per-chat config for timezone formatting and deletion behavior.
 func (w *Worker) updateNotificationMessage(notification *storage.Notification, userID uint, chatID int64) {
+	settings, err := w.loadChatSettings(chatID)
+	if err != nil {
+		slog.Error("failed to load chat settings", "error", err, "chat_id", chatID)
+		return
+	}
 	if err := w.store.MarkWatchStatus(notification.ID, userID); err != nil {
 		slog.Error("failed to update watch status", "error", err)
 		return
@@ -100,7 +106,7 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 	//haveAllWatched := allWatched(statuses)
 	haveAllWatched := false
 
-	msg := formatNotificationMessage(notification, defaultTimezone)
+	msg := formatNotificationMessage(notification, settings.location)
 	if len(statuses) > 0 {
 		msg += "\n\n" + formatWatchedByLine(statuses, haveAllWatched)
 	}
@@ -120,8 +126,8 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 		InlineButtons: buttons,
 	}
 
-	// Schedule the notification message for deletion 1 hour from now
-	if haveAllWatched {
+	// Only schedule deletion if the chat has deleteWatched enabled
+	if haveAllWatched && settings.deleteWatched {
 		w.scheduleDeletion(notification, chatID)
 	}
 }

@@ -37,6 +37,12 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 // and sends one notification per unique episode. Topics and watch providers are
 // fetched once per chat rather than per user.
 func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day string) {
+	settings, err := w.loadChatSettings(chatID)
+	if err != nil {
+		slog.Error("failed to load chat settings", "error", err, "chat_id", chatID)
+		return
+	}
+
 	// Fetch registered forum topics once for the whole chat
 	topics, err := w.store.GetTopics(chatID)
 	if err != nil {
@@ -53,12 +59,12 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 	for _, entry := range episodes {
 		var watchInfo *tmdb.WatchInfo
 		if entry.Show.IDs.TMDB != 0 {
-			watchInfo, err = w.tmdb.GetWatchProviders(entry.Show.IDs.TMDB, "US")
+			watchInfo, err = w.tmdb.GetWatchProviders(entry.Show.IDs.TMDB, settings.country)
 			if err != nil {
 				slog.Error("failed to fetch watch providers", "show", entry.Show.Title, "error", err)
 			}
 		}
-		w.notifyEpisode(entry, chatID, users, topics, watchInfo)
+		w.notifyEpisode(entry, chatID, users, topics, watchInfo, settings.location)
 	}
 }
 
@@ -100,7 +106,7 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 // sends a Result to the output channel and saves the notification.
 // topics is the list of registered forum topics for this chat — used to
 // route the notification to the right topic thread.
-func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []storage.User, topics []storage.Topic, watchInfo *tmdb.WatchInfo) {
+func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []storage.User, topics []storage.Topic, watchInfo *tmdb.WatchInfo, loc *time.Location) {
 	hasNotification, err := w.store.HasNotification(chatID, entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
 	if err != nil {
 		slog.Error("failed to check notification", "error", err)
@@ -124,7 +130,7 @@ func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []
 
 	// Build the full message: episode info + "Watched by" status line
 	watchedLine := w.createAndFormatWatchStatuses(notification.ID, users)
-	msg := formatNotificationMessage(&notification, defaultTimezone)
+	msg := formatNotificationMessage(&notification, loc)
 	if watchedLine != "" {
 		msg += "\n\n" + watchedLine
 	}

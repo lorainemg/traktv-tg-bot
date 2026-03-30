@@ -29,6 +29,10 @@ type Service interface {
 	GetUnwatchedStatusesByUser(userID uint) ([]WatchStatus, error)
 	MarkWatchStatus(notificationID uint, userID uint) error
 
+	// ChatConfig methods — per-chat settings (country, timezone, deletion toggle)
+	GetChatConfig(chatID int64) (*ChatConfig, error)
+	CreateOrUpdateChatConfig(config *ChatConfig) error
+
 	// ScheduledDeletion methods — deferred message cleanup
 	CreateScheduledDeletion(deletion *ScheduledDeletion) error
 	GetPendingDeletions() ([]ScheduledDeletion, error)

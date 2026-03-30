@@ -33,7 +33,7 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 
 	// AutoMigrate creates or updates the table schema to match the struct.
 	// It will NOT delete unused columns — only add new ones or modify existing ones.
-	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}, &WatchStatus{}, &ScheduledDeletion{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}, &WatchStatus{}, &ScheduledDeletion{}, &ChatConfig{}); err != nil {
 		return nil, fmt.Errorf("running auto-migration: %w", err)
 	}
 
@@ -302,6 +302,40 @@ func (s *PostgresStore) MarkWatchStatus(notificationID uint, userID uint) error 
 		Update("watched", true)
 	if result.Error != nil {
 		return fmt.Errorf("marking watch status for notification %d, user %d: %w", notificationID, userID, result.Error)
+	}
+	return nil
+}
+
+// GetChatConfig retrieves the configuration for a chat.
+// Returns (nil, nil) if no config exists yet — the caller uses defaults.
+func (s *PostgresStore) GetChatConfig(chatID int64) (*ChatConfig, error) {
+	var config ChatConfig
+	err := s.db.Where("chat_id = ?", chatID).First(&config).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching chat config for chat %d: %w", chatID, err)
+	}
+	return &config, nil
+}
+
+// CreateOrUpdateChatConfig upserts a chat's config by ChatID.
+// If a row exists, it updates country/timezone/delete_watched; otherwise it creates one.
+// Uses map[string]any instead of a struct in Assign — GORM skips zero-value struct
+// fields (false, "", 0), so DeleteWatched=false would be silently ignored with a struct.
+// A map explicitly includes every key, so GORM always sends the UPDATE.
+func (s *PostgresStore) CreateOrUpdateChatConfig(config *ChatConfig) error {
+	result := s.db.
+		Where("chat_id = ?", config.ChatID).
+		Assign(map[string]any{
+			"country":        config.Country,
+			"timezone":       config.Timezone,
+			"delete_watched": config.DeleteWatched,
+		}).
+		FirstOrCreate(config)
+	if result.Error != nil {
+		return fmt.Errorf("upserting chat config for chat %d: %w", config.ChatID, result.Error)
 	}
 	return nil
 }
