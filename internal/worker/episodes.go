@@ -9,6 +9,11 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
 )
 
+type chatEpisode struct {
+	entry   trakt.CalendarEntry
+	userIDs []uint
+}
+
 // handleCheckEpisodes fetches all active chats and checks each one for new episodes.
 // It iterates per chat (not per user) because notifications are scoped to chats -
 // one notification per episode per chat, regardless of how many users follow the show.
@@ -56,23 +61,24 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 	slog.Info("found episodes for chat", "count", len(episodes), "chat_id", chatID)
 
 	// Send a notification for each unique episode
-	for _, entry := range episodes {
+	for _, episode := range episodes {
 		var watchInfo *tmdb.WatchInfo
-		if entry.Show.IDs.TMDB != 0 {
-			watchInfo, err = w.tmdb.GetWatchProviders(entry.Show.IDs.TMDB, settings.country)
+		tmdbID := episode.entry.Show.IDs.TMDB
+		if tmdbID != 0 {
+			watchInfo, err = w.tmdb.GetWatchProviders(tmdbID, settings.country)
 			if err != nil {
-				slog.Error("failed to fetch watch providers", "show", entry.Show.Title, "error", err)
+				slog.Error("failed to fetch watch providers", "show", episode.entry.Show.Title, "error", err)
 			}
 		}
-		w.notifyEpisode(entry, chatID, users, topics, watchInfo, settings.location)
+		w.notifyEpisode(episode, chatID, topics, watchInfo, settings.location)
 	}
 }
 
 // collectChatEpisodes fetches calendar entries from every user and merges them
 // into a single deduplicated map. The map key "ShowTitle-S02E01" ensures each
 // episode appears only once even if multiple users follow the same show.
-func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[string]trakt.CalendarEntry {
-	episodes := make(map[string]trakt.CalendarEntry)
+func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[string]chatEpisode {
+	episodes := make(map[string]chatEpisode)
 
 	for i := range users {
 		user := &users[i] // pointer to slice element — mutations propagate back
@@ -96,16 +102,24 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 		}
 
 		for _, entry := range entries {
-			// Skip shows that are only on the watchlist (not actually being watched)
 			if watchlistShows[entry.Show.IDs.Trakt] {
 				continue
 			}
 			key := episodeKey(entry.Show.IDs.Trakt, entry.Episode.Season, entry.Episode.Number)
-			episodes[key] = entry
+
+			if ep, exists := episodes[key]; exists {
+				// Episode already in map from another user — just append this user's ID
+				ep.userIDs = append(ep.userIDs, user.ID)
+				episodes[key] = ep
+			} else {
+				// First time seeing this episode — create a new entry
+				episodes[key] = chatEpisode{
+					entry:   entry,
+					userIDs: []uint{user.ID},
+				}
+			}
 		}
-
 	}
-
 	return episodes
 }
 
@@ -113,7 +127,8 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 // sends a Result to the output channel and saves the notification.
 // topics is the list of registered forum topics for this chat - used to
 // route the notification to the right topic thread.
-func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []storage.User, topics []storage.Topic, watchInfo *tmdb.WatchInfo, loc *time.Location) {
+func (w *Worker) notifyEpisode(episode chatEpisode, chatID int64, topics []storage.Topic, watchInfo *tmdb.WatchInfo, loc *time.Location) {
+	entry := episode.entry
 	hasNotification, err := w.store.HasNotification(chatID, entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
 	if err != nil {
 		slog.Error("failed to check notification", "error", err)
@@ -136,7 +151,7 @@ func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []
 	}
 
 	// Build the full message: episode info + "Watched by" status line
-	watchedLine := w.createAndFormatWatchStatuses(notification.ID, users)
+	watchedLine := w.createAndFormatWatchStatuses(notification.ID, episode.userIDs)
 	msg := formatNotificationMessage(&notification, loc)
 	if watchedLine != "" {
 		msg += "\n\n" + watchedLine
@@ -158,12 +173,7 @@ func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []
 // createAndFormatWatchStatuses creates WatchStatus rows for every user in the chat
 // and returns the formatted "Watched by" line. Returns an empty string if anything
 // fails - the notification still goes out, just without the status line.
-func (w *Worker) createAndFormatWatchStatuses(notificationID uint, users []storage.User) string {
-	userIDs := make([]uint, len(users))
-	for i, u := range users {
-		userIDs[i] = u.ID
-	}
-
+func (w *Worker) createAndFormatWatchStatuses(notificationID uint, userIDs []uint) string {
 	if err := w.store.CreateWatchStatuses(notificationID, userIDs); err != nil {
 		slog.Error("failed to create watch statuses", "error", err)
 		return ""

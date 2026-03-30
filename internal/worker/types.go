@@ -81,6 +81,7 @@ type Result struct {
 	// Used for prompts that expect text input - the reply ensures the bot
 	// receives the message even in group chats with privacy mode enabled.
 	ForceReply            bool
+	Selective             bool   // when true, ForceReply only targets users mentioned in the text
 	InputFieldPlaceholder string // hint shown in the input field, e.g. "US, GB, BR"
 
 	// InlineButtons is a 2D slice: each inner slice is one row of buttons.
@@ -115,7 +116,8 @@ type TopicPayload struct {
 type ConfigCallbackPayload struct {
 	ChatID          int64
 	CallbackQueryID string
-	MessageID       int // the config message to edit in-place after changes
+	MessageID       int   // the config message to edit in-place after changes
+	UserTelegramID  int64 // who clicked the button - used for selective ForceReply
 }
 
 // TimezonePayload carries the selected IANA timezone from an inline button callback.

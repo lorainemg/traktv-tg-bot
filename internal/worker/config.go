@@ -99,11 +99,13 @@ func (w *Worker) handlePromptCountry(task Task) {
 	// Prompt the user for input - ForceReply makes Telegram open the reply UI,
 	// which ensures the bot receives the response even in group chats with
 	// privacy mode enabled (bots always receive replies to their own messages).
+	// Selective limits the ForceReply to the user mentioned in the message text.
 	w.results <- Result{
 		ChatID:                payload.ChatID,
 		ThreadID:              task.ThreadID,
-		Text:                  "Reply to this message with a 2-letter country code (e.g. `US`, `GB`, `BR`)",
+		Text:                  fmt.Sprintf("[​](tg://user?id=%d)Reply with a 2-letter country code (e.g. `US`, `GB`, `BR`)", payload.UserTelegramID),
 		ForceReply:            true,
+		Selective:             true,
 		InputFieldPlaceholder: "e.g. US, GB, BR",
 	}
 }

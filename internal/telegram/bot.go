@@ -132,6 +132,7 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 	if result.ForceReply {
 		params.ReplyMarkup = &models.ForceReply{
 			ForceReply:            true,
+			Selective:             result.Selective,
 			InputFieldPlaceholder: result.InputFieldPlaceholder,
 		}
 	} else if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
@@ -380,6 +381,7 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 		ChatID:          cq.Message.Message.Chat.ID,
 		CallbackQueryID: cq.ID,
 		MessageID:       cq.Message.Message.ID,
+		UserTelegramID:  cq.From.ID,
 	}
 
 	switch {
