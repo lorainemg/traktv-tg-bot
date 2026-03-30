@@ -43,6 +43,7 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	}
 
 	// MatchTypePrefix so "/cmd@BotName" in group chats still matches.
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypePrefix, b.handleHelp)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypePrefix, b.handleStart)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/auth", bot.MatchTypePrefix, b.handleAuth)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/register_topic", bot.MatchTypePrefix, b.handleRegisterTopic)
@@ -191,11 +192,37 @@ func (b *Bot) StartResultsForwarder(ctx context.Context) {
 	}()
 }
 
+// handleHelp replies with a friendly overview of all available commands.
+func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	helpText := `Hey there! Here's what I can do:
+
+/auth — Link your <a href="https://trakt.tv">Trakt.tv</a> account so I can track your shows
+/upcoming — See what's airing in the next 7 days
+/shows — Browse all the shows people are following here
+/register_topic genre — Route episode notifications of a genre to this group topic
+/mute — Take a break from episode notifications
+/unmute — Turn notifications back on
+
+Just /auth to get started and I'll handle the rest!`
+
+	_, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:             update.Message.Chat.ID,
+		Text:               helpText,
+		ParseMode:          models.ParseModeHTML,
+		LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: bot.True()},
+	})
+	if err != nil {
+		slog.Error("failed to send help message", "error", err)
+	}
+}
+
 // handleStart replies with a welcome message when a user sends /start.
 func (b *Bot) handleStart(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	_, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Welcome to Traktv-TG-Bot! Use /help for commands.",
+		ChatID:             update.Message.Chat.ID,
+		Text:               "Hey! I'm your TV show companion. I'll keep you posted when new episodes air and track what everyone's watching.\n\nGet started by linking your [Trakt.tv](https://trakt.tv) account with /auth, or check /help to see everything I can do.",
+		ParseMode:          models.ParseModeMarkdownV1,
+		LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: bot.True()},
 	})
 	if err != nil {
 		slog.Error("failed to send message", "error", err)
