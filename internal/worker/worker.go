@@ -78,6 +78,8 @@ func (w *Worker) process(task Task) {
 		w.handleCheckWatchHistory()
 	case TaskProcessDeletions:
 		w.handleProcessDeletions()
+	case TaskUpcoming:
+		w.handleUpcoming(task)
 	default:
 		slog.Warn("unknown task type", "type", task.Type)
 	}

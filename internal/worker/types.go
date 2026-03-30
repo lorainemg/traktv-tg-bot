@@ -15,6 +15,7 @@ const (
 	TaskMarkWatched                      // = 4
 	TaskCheckWatchHistory                // = 5
 	TaskProcessDeletions                 // = 6
+	TaskUpcoming                         // = 7
 )
 
 // Task represents a unit of work submitted to the worker queue.

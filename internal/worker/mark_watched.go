@@ -100,7 +100,7 @@ func (w *Worker) updateNotificationMessage(notification *storage.Notification, u
 	//haveAllWatched := allWatched(statuses)
 	haveAllWatched := false
 
-	msg := formatNotificationMessage(notification)
+	msg := formatNotificationMessage(notification, defaultTimezone)
 	if len(statuses) > 0 {
 		msg += "\n\n" + formatWatchedByLine(statuses, haveAllWatched)
 	}

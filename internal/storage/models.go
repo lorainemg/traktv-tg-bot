@@ -78,10 +78,6 @@ type Notification struct {
 	WatchLink string         // JustWatch URL for the show
 }
 
-func (n *Notification) EpisodeKey() string {
-	return fmt.Sprintf("S%02dE%02d", n.Season, n.EpisodeNumber)
-}
-
 // ScheduledDeletion records a Telegram message that should be deleted after a delay.
 // The deletion checker periodically queries for rows where DeleteAt has passed.
 type ScheduledDeletion struct {

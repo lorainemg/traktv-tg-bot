@@ -8,6 +8,22 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 )
 
+// defaultTimezone is used when no per-chat timezone is configured.
+// Loaded once at package init — safe for concurrent use across goroutines.
+// Later, when per-chat timezones are stored in the DB, callers will pass
+// the chat's *time.Location instead of this default.
+var defaultTimezone = mustLoadLocation("America/New_York")
+
+// mustLoadLocation loads a timezone and panics if it fails — used only for
+// the hardcoded default, so a panic means a broken Go installation.
+func mustLoadLocation(name string) *time.Location {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		panic(fmt.Sprintf("failed to load timezone %q: %v", name, err))
+	}
+	return loc
+}
+
 // hiddenProviders lists TMDB provider names we don't want to show in notifications.
 var hiddenProviders = map[string]bool{
 	"Amazon Prime Video with Ads": true,
@@ -15,11 +31,12 @@ var hiddenProviders = map[string]bool{
 
 // formatNotificationMessage builds the notification text from stored Notification data.
 // Used both for the initial send and when editing the message after a watch status update.
-func formatNotificationMessage(n *storage.Notification) string {
-	airDate := formatAirDate(n.FirstAired)
+// loc controls the timezone for the air date — pass defaultTimezone when no per-chat setting exists.
+func formatNotificationMessage(n *storage.Notification, loc *time.Location) string {
+	airDate := formatAirDate(n.FirstAired, loc)
 
-	// Line 1: show title + episode key
-	msg := fmt.Sprintf("📺 *%s* · %s", n.ShowTitle, n.EpisodeKey())
+	// Line 1: show title + episode code
+	msg := fmt.Sprintf("📺 *%s* · %s", n.ShowTitle, formatEpisodeCode(n.Season, n.EpisodeNumber))
 
 	// Line 2: episode title in italics
 	msg += fmt.Sprintf("\n_%s_", n.EpisodeTitle)
@@ -107,21 +124,26 @@ func formatWatchedByLine(statuses []storage.WatchStatus, haveAllWatched bool) st
 }
 
 // formatAirDate parses a Trakt ISO timestamp (UTC) and returns a human-friendly
-// date converted to US Eastern time. time.LoadLocation handles EST/EDT automatically.
-func formatAirDate(isoDate string) string {
+// date converted to the given timezone. The loc parameter lets callers pass a
+// per-chat timezone; use defaultTimezone when none is configured.
+func formatAirDate(isoDate string, loc *time.Location) string {
 	t, err := time.Parse("2006-01-02T15:04:05.000Z", isoDate)
 	if err != nil {
 		return isoDate
 	}
-	eastern, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		return t.Format("Jan 2 at 3:04 PM")
-	}
-	return t.In(eastern).Format("Jan 2 at 3:04 PM EST")
+	// t.In(loc) converts from UTC to the target timezone.
+	// The "MST" in the format string is a Go layout placeholder — it gets
+	// replaced with the timezone abbreviation (EST, EDT, PST, etc.).
+	return t.In(loc).Format("Jan 2 at 3:04 PM MST")
 }
 
 func episodeKey(traktId, season, episodeNumber int) string {
 	return fmt.Sprintf("%d-%02d-%02d", traktId, season, episodeNumber)
+}
+
+// formatEpisodeCode returns a human-readable episode code like "S02E05".
+func formatEpisodeCode(season, episodeNumber int) string {
+	return fmt.Sprintf("S%02dE%02d", season, episodeNumber)
 }
 
 // allWatched returns true when every user in the list has marked the episode as watched.

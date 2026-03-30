@@ -124,7 +124,7 @@ func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []
 
 	// Build the full message: episode info + "Watched by" status line
 	watchedLine := w.createAndFormatWatchStatuses(notification.ID, users)
-	msg := formatNotificationMessage(&notification)
+	msg := formatNotificationMessage(&notification, defaultTimezone)
 	if watchedLine != "" {
 		msg += "\n\n" + watchedLine
 	}

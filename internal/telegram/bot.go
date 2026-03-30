@@ -47,6 +47,7 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	// MatchTypePrefix matches any message starting with "/register_topic" —
 	// this lets us capture the argument after the command (e.g. "/register_topic anime").
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/register_topic", bot.MatchTypePrefix, b.handleRegisterTopic)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/upcoming", bot.MatchTypeExact, b.handleUpcoming)
 	// MatchTypePrefix so "/mute@BotName" in group chats still matches.
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/mute", bot.MatchTypePrefix, b.handleMute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
@@ -253,6 +254,14 @@ func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *m
 			ThreadID: msg.MessageThreadID,
 			Name:     name,
 		},
+	})
+}
+
+// handleUpcoming submits a task to list upcoming episodes for the next 7 days.
+func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	b.worker.Submit(worker.Task{
+		Type:   worker.TaskUpcoming,
+		ChatID: update.Message.Chat.ID,
 	})
 }
 
