@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -33,7 +33,7 @@ func requireEnv(keys ...string) map[string]string {
 	}
 
 	if len(missing) > 0 {
-		fmt.Printf("Missing required environment variables: %s\n", strings.Join(missing, ", "))
+		slog.Error("missing required environment variables", "keys", strings.Join(missing, ", "))
 		os.Exit(1)
 	}
 
@@ -91,16 +91,32 @@ func startDeletionChecker(ctx context.Context, w *worker.Worker) {
 	}
 }
 
+func setupLogger() {
+	isDev := strings.HasPrefix(strings.ToLower(os.Getenv("ENV")), "dev")
+	if isDev {
+		level := slog.LevelDebug
+		handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+		slog.SetDefault(slog.New(handler))
+
+	} else {
+		level := slog.LevelInfo
+		handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+		slog.SetDefault(slog.New(handler))
+	}
+}
+
 func main() {
+	setupLogger()
+
 	env := requireEnv("TELEGRAM_BOT_TOKEN", "DATABASE_URL", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TMDB_API_KEY")
 
 	// Connect to PostgreSQL — now returns a *PostgresStore that satisfies storage.Service
 	store, err := storage.Connect(env["DATABASE_URL"])
 	if err != nil {
-		fmt.Println("Failed to connect to database:", err)
+		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-	fmt.Println("Connected to database")
+	slog.Info("connected to database")
 
 	traktClient := trakt.NewClient(env["TRAKT_CLIENT_ID"], env["TRAKT_CLIENT_SECRET"])
 	tmdbClient := tmdb.NewClient(env["TMDB_API_KEY"])
@@ -112,7 +128,7 @@ func main() {
 	// Create the Telegram bot — it only depends on the worker, nothing else.
 	tgBot, err := telegram.NewBot(env["TELEGRAM_BOT_TOKEN"], w)
 	if err != nil {
-		fmt.Println("Failed to create telegram bot:", err)
+		slog.Error("failed to create telegram bot", "error", err)
 		os.Exit(1)
 	}
 
@@ -133,6 +149,6 @@ func main() {
 	go startWatchHistoryChecker(ctx, w)
 	go startDeletionChecker(ctx, w)
 
-	fmt.Println("Bot is running... Press Ctrl+C to stop.")
+	slog.Info("bot is running, press Ctrl+C to stop")
 	tgBot.Start(ctx)
 }

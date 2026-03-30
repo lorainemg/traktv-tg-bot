@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 )
 
@@ -26,7 +27,7 @@ func NewClient(apiKey string) *Client {
 // closeBody safely closes an HTTP response body.
 func closeBody(body io.ReadCloser) {
 	if err := body.Close(); err != nil {
-		fmt.Println("Error closing response body:", err)
+		slog.Error("failed to close response body", "error", err)
 	}
 }
 

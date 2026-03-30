@@ -1,7 +1,7 @@
 package worker
 
 import (
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
@@ -12,18 +12,18 @@ import (
 // and updates TG notifications when an episode was marked as watched on Trakt
 // but not yet reflected in the bot's watch status.
 func (w *Worker) handleCheckWatchHistory() {
-	fmt.Println("Checking Trakt watch history...")
+	slog.Info("checking Trakt watch history")
 
 	chatIDs, err := w.store.GetDistinctChatIDs()
 	if err != nil {
-		fmt.Println("Error fetching chat IDs:", err)
+		slog.Error("failed to fetch chat IDs", "error", err)
 		return
 	}
 
 	for _, chatID := range chatIDs {
 		users, err := w.store.GetUsersByChatID(chatID)
 		if err != nil {
-			fmt.Printf("Error fetching users for chat %d: %v\n", chatID, err)
+			slog.Error("failed to fetch users for chat", "chat_id", chatID, "error", err)
 			continue
 		}
 		for _, user := range users {
@@ -38,7 +38,7 @@ func (w *Worker) handleCheckWatchHistory() {
 func (w *Worker) checkUserWatchHistory(user storage.User, chatID int64) {
 	unwatched, err := w.store.GetUnwatchedStatusesByUser(user.ID)
 	if err != nil {
-		fmt.Printf("Error fetching unwatched statuses for user %d: %v\n", user.ID, err)
+		slog.Error("failed to fetch unwatched statuses", "user_id", user.ID, "error", err)
 		return
 	}
 	if len(unwatched) == 0 {
@@ -50,7 +50,7 @@ func (w *Worker) checkUserWatchHistory(user storage.User, chatID int64) {
 
 	history, err := w.trakt.GetWatchHistory(user.TraktAccessToken, startAt)
 	if err != nil {
-		fmt.Printf("Error fetching watch history for user %d: %v\n", user.ID, err)
+		slog.Error("failed to fetch watch history", "user_id", user.ID, "error", err)
 		return
 	}
 

@@ -2,7 +2,7 @@ package worker
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/tmdb"
@@ -55,7 +55,7 @@ func (w *Worker) Run(ctx context.Context) {
 			w.process(task)
 		case <-ctx.Done():
 			// Shutdown signal received — exit the loop cleanly.
-			fmt.Println("Worker stopped.")
+			slog.Info("worker stopped")
 			return
 		}
 	}
@@ -79,6 +79,6 @@ func (w *Worker) process(task Task) {
 	case TaskProcessDeletions:
 		w.handleProcessDeletions()
 	default:
-		fmt.Printf("Unknown task type: %d\n", task.Type)
+		slog.Warn("unknown task type", "type", task.Type)
 	}
 }

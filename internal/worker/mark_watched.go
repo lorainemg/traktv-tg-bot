@@ -1,7 +1,7 @@
 package worker
 
 import (
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
@@ -13,13 +13,13 @@ import (
 func (w *Worker) handleMarkWatched(task Task) {
 	payload, ok := task.Payload.(MarkWatchedPayload)
 	if !ok {
-		fmt.Println("Error: invalid payload for MarkWatched task")
+		slog.Error("invalid payload for MarkWatched task")
 		return
 	}
 
 	notification, err := w.store.GetNotificationByID(payload.NotificationID)
 	if err != nil {
-		fmt.Println("Error looking up notification:", err)
+		slog.Error("failed to look up notification", "error", err, "notification_id", payload.NotificationID)
 		return
 	}
 	if notification == nil {
@@ -32,7 +32,7 @@ func (w *Worker) handleMarkWatched(task Task) {
 	}
 	watchStatus, err := w.store.GetUserWatchStatus(notification.ID, user.ID)
 	if err != nil {
-		fmt.Println("Error looking up watch status:", err)
+		slog.Error("failed to look up watch status", "error", err)
 		return
 	}
 	if watchStatus.ID == 0 {
@@ -58,7 +58,7 @@ func (w *Worker) handleMarkWatched(task Task) {
 func (w *Worker) resolveWatchUser(payload MarkWatchedPayload) *storage.User {
 	user, err := w.store.GetUserByTelegramID(payload.TelegramID)
 	if err != nil {
-		fmt.Println("Error looking up user:", err)
+		slog.Error("failed to look up user", "error", err)
 		return nil
 	}
 	if user == nil {
@@ -78,7 +78,7 @@ func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notificat
 		notification.EpisodeNumber,
 	)
 	if err != nil {
-		fmt.Println("Error marking episode as watched:", err)
+		slog.Error("failed to mark episode as watched", "error", err)
 		return false
 	}
 	return true
@@ -88,13 +88,13 @@ func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notificat
 // notification text with the updated "Watched by" line, and edits the Telegram message.
 func (w *Worker) updateNotificationMessage(notification *storage.Notification, userID uint, chatID int64) {
 	if err := w.store.MarkWatchStatus(notification.ID, userID); err != nil {
-		fmt.Println("Error updating watch status:", err)
+		slog.Error("failed to update watch status", "error", err)
 		return
 	}
 
 	statuses, err := w.store.GetWatchStatuses(notification.ID)
 	if err != nil {
-		fmt.Println("Error fetching watch statuses:", err)
+		slog.Error("failed to fetch watch statuses", "error", err)
 		return
 	}
 	//haveAllWatched := allWatched(statuses)
@@ -146,6 +146,6 @@ func (w *Worker) scheduleDeletion(notification *storage.Notification, chatID int
 		DeleteAt:       time.Now().Add(1 * time.Second),
 	})
 	if err != nil {
-		fmt.Println("Error scheduling deletion:", err)
+		slog.Error("failed to schedule deletion", "error", err)
 	}
 }

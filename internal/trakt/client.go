@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -37,7 +38,7 @@ func NewClient(clientID, clientSecret string) *Client {
 // closeBody is a helper to safely close an HTTP response body in a deferring.
 func closeBody(body io.ReadCloser) {
 	if err := body.Close(); err != nil {
-		fmt.Println("Error closing response body:", err)
+		slog.Error("failed to close response body", "error", err)
 	}
 }
 
@@ -100,8 +101,8 @@ func (c *Client) do(method, path, accessToken string, body any) (*http.Response,
 			}
 		}
 
-		fmt.Printf("[trakt] 429 on %s %s — waiting %ds (%d/%d)\n",
-			method, path, retrySec, attempt+1, maxRetries)
+		slog.Warn("trakt rate limited, retrying",
+			"method", method, "path", path, "retry_after_secs", retrySec, "attempt", attempt+1, "max_retries", maxRetries)
 		time.Sleep(time.Duration(retrySec) * time.Second)
 	}
 

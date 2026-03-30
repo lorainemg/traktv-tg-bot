@@ -1,6 +1,9 @@
 package worker
 
-import "fmt"
+import (
+	"fmt"
+	"log/slog"
+)
 
 // handleSetMuted processes a mute/unmute request for a user.
 // It updates the user's muted status in the database and sends
@@ -11,13 +14,13 @@ func (w *Worker) handleSetMuted(task Task) {
 	// The ", ok" pattern returns false instead of panicking if the type doesn't match.
 	payload, ok := task.Payload.(MutePayload)
 	if !ok {
-		fmt.Println("Error: invalid payload for TaskSetMuted")
+		slog.Error("invalid payload for TaskSetMuted")
 		return
 	}
 
 	user, err := w.store.GetUserByTelegramID(payload.TelegramID)
 	if err != nil {
-		fmt.Println("Error looking up user:", err)
+		slog.Error("failed to look up user", "error", err)
 		w.results <- Result{ChatID: payload.ChatID, Text: "Something went wrong, please try again."}
 		return
 	}

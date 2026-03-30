@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -83,7 +84,7 @@ func (b *Bot) answerCallbackResult(result worker.Result) {
 		ShowAlert:       result.CallbackShowAlert,
 	})
 	if err != nil {
-		fmt.Println("Error answering callback query:", err)
+		slog.Error("failed to answer callback query", "error", err)
 	}
 }
 
@@ -95,7 +96,7 @@ func (b *Bot) deleteResultsMessage(result worker.Result) {
 		MessageID: result.DeleteMessageID,
 	})
 	if err != nil {
-		fmt.Println("Error deleting message:", err)
+		slog.Error("failed to delete message", "error", err, "chat_id", result.ChatID, "message_id", result.DeleteMessageID)
 	}
 }
 
@@ -129,14 +130,14 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 	}
 	msg, err := b.bot.SendMessage(context.Background(), params)
 	if err != nil {
-		fmt.Println("Error sending message:", err)
+		slog.Error("failed to send message", "error", err, "chat_id", result.ChatID)
 		return
 	}
 
 	// Call the OnSent callback to save the Telegram message ID back to the DB
 	if result.OnSent != nil {
 		if err := result.OnSent(msg.ID); err != nil {
-			fmt.Println("Error in OnSent callback:", err)
+			slog.Error("OnSent callback failed", "error", err, "message_id", msg.ID)
 		}
 	}
 }
@@ -171,7 +172,7 @@ func (b *Bot) editResultsMessage(result worker.Result) {
 		if strings.Contains(err.Error(), "message is not modified") {
 			return
 		}
-		fmt.Println("Error editing message:", err)
+		slog.Error("failed to edit message", "error", err, "chat_id", result.ChatID, "message_id", result.EditMessageID)
 	}
 }
 
@@ -197,7 +198,7 @@ func (b *Bot) handleStart(ctx context.Context, tgBot *bot.Bot, update *models.Up
 		Text:   "Welcome to Traktv-TG-Bot! Use /help for commands.",
 	})
 	if err != nil {
-		fmt.Println("Error sending message:", err)
+		slog.Error("failed to send message", "error", err)
 	}
 }
 
@@ -332,4 +333,3 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 		})
 	}
 }
-

@@ -1,7 +1,7 @@
 package worker
 
 import (
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
@@ -13,11 +13,11 @@ import (
 // It iterates per chat (not per user) because notifications are scoped to chats —
 // one notification per episode per chat, regardless of how many users follow the show.
 func (w *Worker) handleCheckEpisodes(task Task) {
-	fmt.Println("Checking for new episodes...")
+	slog.Info("checking for new episodes")
 
 	chatIDs, err := w.store.GetDistinctChatIDs()
 	if err != nil {
-		fmt.Println("Error fetching chat IDs:", err)
+		slog.Error("failed to fetch chat IDs", "error", err)
 		return
 	}
 
@@ -26,7 +26,7 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 	for _, chatID := range chatIDs {
 		users, err := w.store.GetUsersByChatID(chatID)
 		if err != nil {
-			fmt.Printf("Error fetching users for chat %d: %v\n", chatID, err)
+			slog.Error("failed to fetch users for chat", "chat_id", chatID, "error", err)
 			continue // non-fatal — skip this chat and try the next one
 		}
 		w.checkChatEpisodes(chatID, users, today)
@@ -40,14 +40,14 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 	// Fetch registered forum topics once for the whole chat
 	topics, err := w.store.GetTopics(chatID)
 	if err != nil {
-		fmt.Println("Error fetching topics:", err)
+		slog.Error("failed to fetch topics", "error", err)
 		// Non-fatal — notifications will go to General
 		topics = nil
 	}
 
 	episodes := w.collectChatEpisodes(users, day)
 
-	fmt.Printf("Found %d unique episodes for chat %d\n", len(episodes), chatID)
+	slog.Info("found episodes for chat", "count", len(episodes), "chat_id", chatID)
 
 	// Send a notification for each unique episode
 	for _, entry := range episodes {
@@ -55,7 +55,7 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 		if entry.Show.IDs.TMDB != 0 {
 			watchInfo, err = w.tmdb.GetWatchProviders(entry.Show.IDs.TMDB, "US")
 			if err != nil {
-				fmt.Printf("Error fetching watch providers for %s: %v\n", entry.Show.Title, err)
+				slog.Error("failed to fetch watch providers", "show", entry.Show.Title, "error", err)
 			}
 		}
 		w.notifyEpisode(entry, chatID, users, topics, watchInfo)
@@ -71,14 +71,14 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 	for _, user := range users {
 		watchlistShows, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
 		if err != nil {
-			fmt.Printf("Error fetching watchlist for user %d: %v\n", user.ID, err)
+			slog.Error("failed to fetch watchlist", "user_id", user.ID, "error", err)
 			// Non-fatal — proceed without filtering (nil map reads return zero values safely)
 			watchlistShows = nil
 		}
 
 		entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 5)
 		if err != nil {
-			fmt.Printf("Error fetching calendar for user %d: %v\n", user.ID, err)
+			slog.Error("failed to fetch calendar", "user_id", user.ID, "error", err)
 			continue
 		}
 
@@ -103,7 +103,7 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []storage.User, topics []storage.Topic, watchInfo *tmdb.WatchInfo) {
 	hasNotification, err := w.store.HasNotification(chatID, entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
 	if err != nil {
-		fmt.Println("Error checking notification:", err)
+		slog.Error("failed to check notification", "error", err)
 		return
 	}
 	if hasNotification {
@@ -118,7 +118,7 @@ func (w *Worker) notifyEpisode(entry trakt.CalendarEntry, chatID int64, users []
 
 	// Record the notification so we don't send it again
 	if err := w.store.CreateNotification(&notification); err != nil {
-		fmt.Println("Error saving notification:", err)
+		slog.Error("failed to save notification", "error", err)
 		return
 	}
 
@@ -152,13 +152,13 @@ func (w *Worker) createAndFormatWatchStatuses(notificationID uint, users []stora
 	}
 
 	if err := w.store.CreateWatchStatuses(notificationID, userIDs); err != nil {
-		fmt.Println("Error creating watch statuses:", err)
+		slog.Error("failed to create watch statuses", "error", err)
 		return ""
 	}
 
 	statuses, err := w.store.GetWatchStatuses(notificationID)
 	if err != nil {
-		fmt.Println("Error fetching watch statuses:", err)
+		slog.Error("failed to fetch watch statuses", "error", err)
 		return ""
 	}
 

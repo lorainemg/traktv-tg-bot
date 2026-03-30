@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
@@ -12,13 +13,13 @@ import (
 func (w *Worker) handleStartAuth(task Task) {
 	payload, ok := task.Payload.(AuthPayload)
 	if !ok {
-		fmt.Println("Invalid payload for StartAuth task")
+		slog.Error("invalid payload for StartAuth task")
 		return
 	}
 
 	existing, err := w.store.GetUserByTelegramID(payload.TelegramID)
 	if err != nil {
-		fmt.Println("Error looking up existing user:", err)
+		slog.Error("failed to look up existing user", "error", err)
 		w.results <- Result{
 			ChatID: task.ChatID,
 			Text:   "Something went wrong. Please try again.",
@@ -31,7 +32,7 @@ func (w *Worker) handleStartAuth(task Task) {
 		// Update names on every /auth — catches Telegram display name changes.
 		err = w.store.UpdateUserNames(payload.TelegramID, payload.FirstName, payload.Username)
 		if err != nil {
-			fmt.Println("Error updating user names:", err)
+			slog.Error("failed to update user names", "error", err)
 		}
 	} else {
 		w.handleNewUserAuth(task, payload)
@@ -58,7 +59,7 @@ func (w *Worker) handleExistingUserAuth(task Task, payload AuthPayload, existing
 	}
 
 	if err := w.store.UpdateUserChatID(payload.TelegramID, task.ChatID); err != nil {
-		fmt.Println("Error updating user chat ID:", err)
+		slog.Error("failed to update user chat ID", "error", err)
 		w.results <- Result{
 			ChatID: task.ChatID,
 			Text:   "Failed to move notifications. Please try again.",
@@ -76,7 +77,7 @@ func (w *Worker) handleExistingUserAuth(task Task, payload AuthPayload, existing
 func (w *Worker) handleNewUserAuth(task Task, payload AuthPayload) {
 	dc, err := w.trakt.RequestDeviceCode()
 	if err != nil {
-		fmt.Println("Error requesting device code:", err)
+		slog.Error("failed to request device code", "error", err)
 		w.results <- Result{
 			ChatID: task.ChatID,
 			Text:   "Failed to start Trakt auth. Please try again.",
@@ -123,7 +124,7 @@ func (w *Worker) pollForToken(chatID int64, payload AuthPayload, deviceCode stri
 			TraktRefreshToken: token.RefreshToken,
 		})
 		if err != nil {
-			fmt.Println("Error saving user:", err)
+			slog.Error("failed to save user", "error", err)
 			w.results <- Result{
 				ChatID: chatID,
 				Text:   "Failed to save Trakt account. Please try again.",

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
@@ -15,7 +16,7 @@ func (w *Worker) handleRegisterTopic(task Task) {
 	// if Payload isn't a TopicPayload, ok is false instead of panicking.
 	payload, ok := task.Payload.(TopicPayload)
 	if !ok {
-		fmt.Println("Error: invalid payload for TaskRegisterTopic")
+		slog.Error("invalid payload for TaskRegisterTopic")
 		return
 	}
 
@@ -23,7 +24,7 @@ func (w *Worker) handleRegisterTopic(task Task) {
 	// one user has authenticated — prevents random groups from using the bot.
 	registered, err := w.store.HasUserInChat(payload.ChatID)
 	if err != nil {
-		fmt.Println("Error checking chat registration:", err)
+		slog.Error("failed to check chat registration", "error", err)
 		return
 	}
 	if !registered {
@@ -42,7 +43,7 @@ func (w *Worker) handleRegisterTopic(task Task) {
 	}
 
 	if err := w.store.CreateOrUpdateTopic(topic); err != nil {
-		fmt.Println("Error registering topic:", err)
+		slog.Error("failed to register topic", "error", err)
 		w.results <- Result{
 			ChatID:   payload.ChatID,
 			ThreadID: payload.ThreadID,
