@@ -88,51 +88,58 @@ func (w *Worker) handleNewUserSub(task Task, payload SubPayload) {
 	w.results <- task.TextResult(fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode))
 
 	// Poll in a goroutine so we don't block the worker loop.
-	go w.pollForToken(task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval)
+	go w.pollForToken(task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval, dc.ExpiresIn)
 }
 
 // pollForToken repeatedly checks if the user has authorized the device code.
 // Runs as a separate goroutine so the worker's main loop stays free.
-func (w *Worker) pollForToken(chatID int64, threadID int, payload SubPayload, deviceCode string, intervalSecs int) {
+func (w *Worker) pollForToken(chatID int64, threadID int, payload SubPayload, deviceCode string, intervalSecs int, expiresInSecs int) {
 	// Build a minimal Task so we can use TextResult inside this goroutine.
 	// pollForToken runs outside the worker loop, so it doesn't have the
 	// original task - we reconstruct just enough to build Results.
 	t := Task{ChatID: chatID, ThreadID: threadID}
 
+	deadline := time.After(time.Duration(expiresInSecs) * time.Second)
 	ticker := time.NewTicker(time.Duration(intervalSecs) * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		token, err := w.trakt.PollForToken(deviceCode)
-		if err != nil {
-			w.results <- t.TextResult(fmt.Sprintf("Trakt auth failed: %v", err))
+	for {
+		select {
+		case <-deadline:
+			w.results <- t.TextResult("Trakt auth timed out. Please try again.")
+			return
+		case <-ticker.C:
+			token, err := w.trakt.PollForToken(deviceCode)
+			if err != nil {
+				w.results <- t.TextResult(fmt.Sprintf("Trakt auth failed: %v", err))
+				return
+			}
+			// nil token means "not authorized yet" - keep polling
+			if token == nil {
+				continue
+			}
+
+			// Compute when the token expires: CreatedAt (unix timestamp) + ExpiresIn (seconds)
+			expiresAt := time.Unix(int64(token.CreatedAt+token.ExpiresIn), 0)
+
+			// pollForToken only runs for new users, so just create.
+			err = w.store.CreateOrUpdateUser(&storage.User{
+				TelegramID:          payload.TelegramID,
+				FirstName:           payload.FirstName,
+				Username:            payload.Username,
+				ChatID:              chatID,
+				TraktAccessToken:    token.AccessToken,
+				TraktRefreshToken:   token.RefreshToken,
+				TraktTokenExpiresAt: expiresAt,
+			})
+			if err != nil {
+				slog.Error("failed to save user", "error", err)
+				w.results <- t.TextResult("Failed to save Trakt account. Please try again.")
+				return
+			}
+
+			w.results <- t.TextResult("Trakt account linked!")
 			return
 		}
-		// nil token means "not authorized yet" - keep polling
-		if token == nil {
-			continue
-		}
-
-		// Compute when the token expires: CreatedAt (unix timestamp) + ExpiresIn (seconds)
-		expiresAt := time.Unix(int64(token.CreatedAt+token.ExpiresIn), 0)
-
-		// pollForToken only runs for new users, so just create.
-		err = w.store.CreateOrUpdateUser(&storage.User{
-			TelegramID:          payload.TelegramID,
-			FirstName:           payload.FirstName,
-			Username:            payload.Username,
-			ChatID:              chatID,
-			TraktAccessToken:    token.AccessToken,
-			TraktRefreshToken:   token.RefreshToken,
-			TraktTokenExpiresAt: expiresAt,
-		})
-		if err != nil {
-			slog.Error("failed to save user", "error", err)
-			w.results <- t.TextResult("Failed to save Trakt account. Please try again.")
-			return
-		}
-
-		w.results <- t.TextResult("Trakt account linked!")
-		return
 	}
 }
