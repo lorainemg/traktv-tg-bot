@@ -47,9 +47,9 @@ func requireEnv(keys ...string) map[string]string {
 }
 
 // startEpisodeChecker submits an episode check task on a schedule.
-// Checks immediately on startup, then every 30 seconds (change to 1h for production).
-func startEpisodeChecker(ctx context.Context, w *worker.Worker) {
-	ticker := time.NewTicker(30 * time.Second) // change to 1*time.Hour for production
+// Checks immediately on startup, then on the given interval.
+func startEpisodeChecker(ctx context.Context, w *worker.Worker, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
@@ -66,8 +66,8 @@ func startEpisodeChecker(ctx context.Context, w *worker.Worker) {
 
 // startWatchHistoryChecker detects episodes marked as watched directly on Trakt
 // and updates the corresponding TG notification messages.
-func startWatchHistoryChecker(ctx context.Context, w *worker.Worker) {
-	ticker := time.NewTicker(30 * time.Minute)
+func startWatchHistoryChecker(ctx context.Context, w *worker.Worker, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -81,10 +81,8 @@ func startWatchHistoryChecker(ctx context.Context, w *worker.Worker) {
 }
 
 // startDeletionChecker periodically submits a task to process pending message deletions.
-// Runs every 30 minutes - matching the "delete ~1 hour after all watched" requirement
-// without needing precise timing.
-func startDeletionChecker(ctx context.Context, w *worker.Worker) {
-	ticker := time.NewTicker(30 * time.Minute)
+func startDeletionChecker(ctx context.Context, w *worker.Worker, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -151,9 +149,17 @@ func main() {
 	// and delivers messages via Telegram.
 	tgBot.StartResultsForwarder(ctx)
 
-	go startEpisodeChecker(ctx, w)
-	go startWatchHistoryChecker(ctx, w)
-	go startDeletionChecker(ctx, w)
+	// Pick tick interval based on ENV: dev runs every 30s for fast feedback,
+	// production runs every 30min to avoid hammering the Trakt API.
+	tickInterval := 30 * time.Minute
+	if strings.HasPrefix(strings.ToLower(os.Getenv("ENV")), "dev") {
+		tickInterval = 30 * time.Second
+	}
+	slog.Info("ticker interval configured", "interval", tickInterval)
+
+	go startEpisodeChecker(ctx, w, tickInterval)
+	go startWatchHistoryChecker(ctx, w, tickInterval)
+	go startDeletionChecker(ctx, w, tickInterval)
 
 	slog.Info("bot is running, press Ctrl+C to stop")
 	tgBot.Start(ctx)
