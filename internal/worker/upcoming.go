@@ -37,7 +37,7 @@ func (w *Worker) handleUpcoming(task Task) {
 		return
 	}
 	if len(users) == 0 {
-		w.results <- task.TextResult("No authenticated users in this chat. Use /auth first.")
+		w.results <- task.TextResult("No subscribed users in this chat. Use /sub first.")
 		return
 	}
 

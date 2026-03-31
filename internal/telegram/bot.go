@@ -45,12 +45,11 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	// MatchTypePrefix so "/cmd@BotName" in group chats still matches.
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/help", bot.MatchTypePrefix, b.handleHelp)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypePrefix, b.handleStart)
-	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/auth", bot.MatchTypePrefix, b.handleAuth)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/sub", bot.MatchTypePrefix, b.handleSub)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unsub", bot.MatchTypePrefix, b.handleUnsub)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/register_topic", bot.MatchTypePrefix, b.handleRegisterTopic)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/upcoming", bot.MatchTypePrefix, b.handleUpcoming)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/shows", bot.MatchTypePrefix, b.handleShows)
-	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/mute", bot.MatchTypePrefix, b.handleMute)
-	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/config", bot.MatchTypePrefix, b.handleConfig)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unseen", bot.MatchTypePrefix, b.handleUnseen)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/whowatch", bot.MatchTypePrefix, b.handleWhoWatch)
@@ -219,17 +218,16 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 • Notifications can auto-delete once everyone's watched (toggle via /config)
 
 <b>Commands</b>
-/auth - Link your <a href="https://trakt.tv">Trakt.tv</a> account so I can track your shows
+/sub - Link your <a href="https://trakt.tv">Trakt.tv</a> account and subscribe to notifications
+/unsub - Pause episode notifications (re-subscribe anytime with /sub)
 /upcoming [days] - See what's airing soon (default: 7 days, max: 31)
 /unseen [@user] - See unseen episode counts (yours, or reply/mention someone)
 /shows [@user] - List returning shows you or someone else follows
 /whowatch &lt;show&gt; - Check who in this chat watches a specific show
 /register_topic &lt;genre&gt; - Route episode notifications of a genre to this group topic
 /config - Chat settings: country, timezone, auto-delete watched notifications
-/mute - Take a break from episode notifications
-/unmute - Turn notifications back on
 
-Just /auth to get started and I'll handle the rest!`
+Just /sub to get started and I'll handle the rest!`
 
 	_, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:             update.Message.Chat.ID,
@@ -248,7 +246,7 @@ func (b *Bot) handleStart(ctx context.Context, tgBot *bot.Bot, update *models.Up
 	_, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:             update.Message.Chat.ID,
 		MessageThreadID:    update.Message.MessageThreadID,
-		Text:               "Hey! I'm your TV show companion. I'll keep you posted when new episodes air and track what everyone's watching.\n\nGet started by linking your [Trakt.tv](https://trakt.tv) account with /auth, or check /help to see everything I can do.",
+		Text:               "Hey! I'm your TV show companion. I'll keep you posted when new episodes air and track what everyone's watching.\n\nGet started by linking your [Trakt.tv](https://trakt.tv) account with /sub, or check /help to see everything I can do.",
 		ParseMode:          models.ParseModeMarkdownV1,
 		LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: bot.True()},
 	})
@@ -257,14 +255,14 @@ func (b *Bot) handleStart(ctx context.Context, tgBot *bot.Bot, update *models.Up
 	}
 }
 
-// handleAuth submits an auth task to the worker, which handles the entire
-// Trakt OAuth device flow (request code, poll for token, save user).
-func (b *Bot) handleAuth(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+// handleSub submits a subscribe task to the worker. For new users this starts
+// the Trakt OAuth device flow; for existing users it re-subscribes (unmutes).
+func (b *Bot) handleSub(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
-		Type:     worker.TaskStartAuth,
+		Type:     worker.TaskSub,
 		ChatID:   update.Message.Chat.ID,
 		ThreadID: update.Message.MessageThreadID,
-		Payload: worker.AuthPayload{
+		Payload: worker.SubPayload{
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
 			FirstName:  update.Message.From.FirstName,
@@ -355,30 +353,15 @@ func (b *Bot) handleShows(ctx context.Context, tgBot *bot.Bot, update *models.Up
 	})
 }
 
-// handleMute submits a task to stop episode notifications for the calling user.
-func (b *Bot) handleMute(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+// handleUnsub submits a task to pause episode notifications for the calling user.
+func (b *Bot) handleUnsub(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	b.worker.Submit(worker.Task{
-		Type:     worker.TaskSetMuted,
+		Type:     worker.TaskUnsub,
 		ChatID:   update.Message.Chat.ID,
 		ThreadID: update.Message.MessageThreadID,
-		Payload: worker.MutePayload{
+		Payload: worker.UnsubPayload{
 			TelegramID: update.Message.From.ID,
 			ChatID:     update.Message.Chat.ID,
-			Muted:      true,
-		},
-	})
-}
-
-// handleUnmute submits a task to resume episode notifications for the calling user.
-func (b *Bot) handleUnmute(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
-	b.worker.Submit(worker.Task{
-		Type:     worker.TaskSetMuted,
-		ChatID:   update.Message.Chat.ID,
-		ThreadID: update.Message.MessageThreadID,
-		Payload: worker.MutePayload{
-			TelegramID: update.Message.From.ID,
-			ChatID:     update.Message.Chat.ID,
-			Muted:      false,
 		},
 	})
 }

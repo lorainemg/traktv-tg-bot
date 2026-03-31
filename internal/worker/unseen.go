@@ -27,12 +27,12 @@ func (w *Worker) handleUnseen(task Task) {
 		return
 	}
 	if user == nil {
-		w.results <- task.TextResult("That user hasn't linked their Trakt account yet. They need to /auth first.")
+		w.results <- task.TextResult("That user hasn't linked their Trakt account yet. They need to /sub first.")
 		return
 	}
 
 	if user.Muted {
-		w.results <- task.TextResult(fmt.Sprintf("%s is muted.", user.MentionLink()))
+		w.results <- task.TextResult(fmt.Sprintf("%s is currently unsubscribed.", user.MentionLink()))
 		return
 	}
 

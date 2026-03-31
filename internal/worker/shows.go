@@ -21,7 +21,11 @@ func (w *Worker) handleShows(task Task) {
 		return
 	}
 	if user == nil {
-		w.results <- task.TextResult("That user hasn't linked their Trakt account yet. They need to /auth first.")
+		w.results <- task.TextResult("That user hasn't linked their Trakt account yet. They need to /sub first.")
+		return
+	}
+	if user.Muted {
+		w.results <- task.TextResult(fmt.Sprintf("%s is currently unsubscribed.", user.MentionLink()))
 		return
 	}
 
@@ -57,6 +61,9 @@ func (w *Worker) handleShowsPage(task Task) {
 	user, err := w.store.GetUserByTelegramID(p.TargetTelegramID)
 	if err != nil || user == nil {
 		slog.Error("shows page: failed to fetch user", "telegram_id", p.TargetTelegramID, "error", err)
+		return
+	}
+	if user.Muted {
 		return
 	}
 

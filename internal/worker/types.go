@@ -8,10 +8,10 @@ type TaskType int
 // It starts at 0 and increments by 1 for each constant in the block -
 // like an auto-numbered enum in C#.
 const (
-	TaskCheckEpisodes     TaskType = iota // = 0
-	TaskStartAuth                        // = 1
-	TaskRegisterTopic                    // = 2
-	TaskSetMuted                         // = 3
+	TaskCheckEpisodes TaskType = iota // = 0
+	TaskSub                          // = 1
+	TaskRegisterTopic                // = 2
+	TaskUnsub                        // = 3
 	TaskMarkWatched                      // = 4
 	TaskCheckWatchHistory                // = 5
 	TaskProcessDeletions                 // = 6
@@ -92,19 +92,18 @@ type Result struct {
 	InlineButtons [][]InlineButton
 }
 
-// AuthPayload carries the data needed to start the Trakt OAuth device flow.
-type AuthPayload struct {
+// SubPayload carries the data needed to subscribe a user (auth or re-subscribe).
+type SubPayload struct {
 	TelegramID int64
-	ChatID     int64  // the chat where the user ran /auth - notifications go here
+	ChatID     int64  // the chat where the user ran /sub - notifications go here
 	FirstName  string // user's Telegram display name - used in farewell messages
 	Username   string
 }
 
-// MutePayload carries the data needed to mute or unmute a user.
-type MutePayload struct {
+// UnsubPayload carries the data needed to unsubscribe a user from notifications.
+type UnsubPayload struct {
 	TelegramID int64
 	ChatID     int64
-	Muted      bool // true = mute (stop notifications), false = unmute (resume)
 }
 
 // TopicPayload carries the data needed to register a forum topic.

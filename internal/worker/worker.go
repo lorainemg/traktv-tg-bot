@@ -84,12 +84,12 @@ func (w *Worker) process(task Task) {
 	switch task.Type {
 	case TaskCheckEpisodes:
 		w.handleCheckEpisodes(task)
-	case TaskStartAuth:
-		w.handleStartAuth(task)
+	case TaskSub:
+		w.handleSub(task)
 	case TaskRegisterTopic:
 		w.handleRegisterTopic(task)
-	case TaskSetMuted:
-		w.handleSetMuted(task)
+	case TaskUnsub:
+		w.handleUnsub(task)
 	case TaskMarkWatched:
 		w.handleMarkWatched(task)
 	case TaskCheckWatchHistory:

@@ -62,7 +62,7 @@ func (w *Worker) resolveWatchUser(payload MarkWatchedPayload) *storage.User {
 		return nil
 	}
 	if user == nil {
-		w.answerCallback(payload.CallbackQueryID, "You need to link your Trakt account first. Use /auth.", true)
+		w.answerCallback(payload.CallbackQueryID, "You need to link your Trakt account first. Use /sub.", true)
 		return nil
 	}
 	return user

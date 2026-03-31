@@ -28,7 +28,7 @@ func (w *Worker) handleRegisterTopic(task Task) {
 		return
 	}
 	if !registered {
-		w.results <- task.TextResult("No authenticated users in this chat. Use /auth first.")
+		w.results <- task.TextResult("No subscribed users in this chat. Use /sub first.")
 		return
 	}
 
