@@ -137,24 +137,37 @@ type TextInputPayload struct {
 	Text   string // the raw text the user sent
 }
 
-// UnseenPayload carries the data needed to look up unseen episodes.
-// Either TargetTelegramID or TargetUsername is set — not both.
-// When both are zero/empty, the requester is asking about themselves.
-type UnseenPayload struct {
+// UserTarget identifies which user a command is directed at.
+// Several commands (/shows, /unseen) support the same three forms:
+//   - no argument        → RequesterID (the caller themselves)
+//   - @username argument → TargetUsername
+//   - reply to a message → TargetTelegramID
+//
+// Struct embedding (below) lets other payload types inherit these fields
+// without repeating them — similar to composition in C# or mixins in Python.
+type UserTarget struct {
 	RequesterID      int64  // who ran the command — used as fallback target
 	TargetTelegramID int64  // set when replying to another user's message
-	TargetUsername   string // set when using /unseen @username
+	TargetUsername   string // set when using @username argument
+}
+
+// UnseenPayload carries the data needed to look up unseen episodes.
+// Embedding UserTarget promotes its fields — you can access
+// payload.RequesterID directly, as if it were declared here.
+type UnseenPayload struct {
+	UserTarget
 }
 
 // PagePayload carries data for paginated list callbacks (shows/upcoming).
 // When the user clicks a Prev/Next button, the bot sends this so the worker
 // knows which page to render and which message to edit.
 type PagePayload struct {
-	ChatID          int64
-	CallbackQueryID string
-	MessageID       int // the existing message to edit in-place
-	Page            int // zero-based page index
-	Days            int // only used for /upcoming — the look-ahead window in days
+	ChatID           int64
+	CallbackQueryID  string
+	MessageID        int   // the existing message to edit in-place
+	Page             int   // zero-based page index
+	TargetTelegramID int64 // only used for /shows — whose shows to display
+	Days             int   // only used for /upcoming — the look-ahead window in days
 }
 
 // MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.

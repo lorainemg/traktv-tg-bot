@@ -25,11 +25,11 @@ func mustLoadLocation(name string) *time.Location {
 }
 
 // pageSize is the maximum number of items shown per page in paginated lists.
-const pageSize = 10
+const pageSize = 20
 
 // paginate returns the sub-slice for the given page and the total page count.
 // [T any] is a type parameter — this single function works for both
-// followedShow and upcomingEpisode slices without duplicating code.
+// different slice types (shows, episodes, etc.) without duplicating code.
 func paginate[T any](items []T, page int) ([]T, int) {
 	totalPages := (len(items) + pageSize - 1) / pageSize
 

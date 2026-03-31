@@ -21,7 +21,7 @@ type unseenShow struct {
 func (w *Worker) handleUnseen(task Task) {
 	payload := task.Payload.(UnseenPayload)
 
-	user, err := w.resolveUnseenTarget(payload)
+	user, err := w.resolveTargetUser(payload.UserTarget)
 	if err != nil {
 		slog.Error("unseen: failed to resolve target user", "error", err)
 		return
@@ -57,21 +57,6 @@ func (w *Worker) handleUnseen(task Task) {
 	}
 
 	w.results <- task.TextResult(formatUnseenMessage(user, shows))
-}
-
-// resolveUnseenTarget determines which user to look up unseen episodes for.
-// Returns (nil, nil) when the user is not found in the database.
-func (w *Worker) resolveUnseenTarget(payload UnseenPayload) (*storage.User, error) {
-	if payload.TargetUsername != "" {
-		return w.store.GetUserByUsername(payload.TargetUsername)
-	}
-	// Use the explicitly targeted Telegram ID (from a reply), or fall back
-	// to the requester's own ID.
-	targetID := payload.TargetTelegramID
-	if targetID == 0 {
-		targetID = payload.RequesterID
-	}
-	return w.store.GetUserByTelegramID(targetID)
 }
 
 // collectUnseenShows filters watched show entries to those with unseen episodes

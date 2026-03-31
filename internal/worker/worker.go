@@ -123,6 +123,23 @@ func (w *Worker) process(task Task) {
 	}
 }
 
+// resolveTargetUser determines which user a command is about.
+// Checks username first, then explicit Telegram ID (from a reply),
+// then falls back to the requester's own ID.
+// Returns (nil, nil) when the user is not found in the database.
+func (w *Worker) resolveTargetUser(target UserTarget) (*storage.User, error) {
+	if target.TargetUsername != "" {
+		return w.store.GetUserByUsername(target.TargetUsername)
+	}
+	// Use the explicitly targeted Telegram ID (from a reply), or fall back
+	// to the requester's own ID.
+	targetID := target.TargetTelegramID
+	if targetID == 0 {
+		targetID = target.RequesterID
+	}
+	return w.store.GetUserByTelegramID(targetID)
+}
+
 // HasPendingInput checks if a chat has a pending text input request.
 // Called from the bot goroutine, so it locks the mutex for safe access.
 func (w *Worker) HasPendingInput(chatID int64) bool {

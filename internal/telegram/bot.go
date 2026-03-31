@@ -344,10 +344,12 @@ func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models
 
 // handleShows submits a task to list all followed shows in this chat.
 func (b *Bot) handleShows(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	msg := update.Message
 	b.worker.Submit(worker.Task{
 		Type:     worker.TaskShows,
-		ChatID:   update.Message.Chat.ID,
-		ThreadID: update.Message.MessageThreadID,
+		ChatID:   msg.Chat.ID,
+		ThreadID: msg.MessageThreadID,
+		Payload:  parseUserTarget(msg),
 	})
 }
 
@@ -436,26 +438,33 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 //   - reply to a message with /unseen — unseen episodes for that user
 func (b *Bot) handleUnseen(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	msg := update.Message
-	payload := worker.UnseenPayload{RequesterID: msg.From.ID}
+	b.worker.Submit(worker.Task{
+		Type:     worker.TaskUnseen,
+		ChatID:   msg.Chat.ID,
+		ThreadID: msg.MessageThreadID,
+		Payload:  worker.UnseenPayload{UserTarget: parseUserTarget(msg)},
+	})
+}
 
-	// Check for @username argument: "/unseen @loraine" or "/unseen loraine"
+// parseUserTarget extracts the target user from a command message.
+// Supports three forms: "/cmd" (self), "/cmd @username", or reply to a message.
+// Reused by any command that targets a single user (/shows, /unseen, etc.).
+func parseUserTarget(msg *models.Message) worker.UserTarget {
+	target := worker.UserTarget{RequesterID: msg.From.ID}
+
+	// Check for @username argument: "/cmd @loraine" or "/cmd loraine"
 	_, arg, _ := strings.Cut(msg.Text, " ")
 	arg = strings.TrimSpace(arg)
 	arg = strings.TrimPrefix(arg, "@") // strip leading @ if present
 
 	if arg != "" {
-		payload.TargetUsername = arg
+		target.TargetUsername = arg
 	} else if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil {
 		// Command was sent as a reply — target the replied-to user
-		payload.TargetTelegramID = msg.ReplyToMessage.From.ID
+		target.TargetTelegramID = msg.ReplyToMessage.From.ID
 	}
 
-	b.worker.Submit(worker.Task{
-		Type:     worker.TaskUnseen,
-		ChatID:   msg.Chat.ID,
-		ThreadID: msg.MessageThreadID,
-		Payload:  payload,
-	})
+	return target
 }
 
 // handleConfig submits a task to display the current chat settings.
@@ -566,10 +575,10 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 
 // handlePaginationCallback parses a pagination callback and submits the
 // appropriate page task. Callback data formats:
-//   - "shows:<page>"            → TaskShowsPage
-//   - "upcoming:<days>:<page>"  → TaskUpcomingPage
+//   - "shows:<telegramID>:<page>"  → TaskShowsPage
+//   - "upcoming:<days>:<page>"     → TaskUpcomingPage
 func (b *Bot) handlePaginationCallback(cq *models.CallbackQuery, taskType worker.TaskType) {
-	// Split callback data into parts: ["shows", "1"] or ["upcoming", "7", "2"]
+	// Split callback data into parts: ["shows", "123", "1"] or ["upcoming", "7", "2"]
 	parts := strings.Split(cq.Data, ":")
 
 	payload := worker.PagePayload{
@@ -580,14 +589,19 @@ func (b *Bot) handlePaginationCallback(cq *models.CallbackQuery, taskType worker
 
 	switch taskType {
 	case worker.TaskShowsPage:
-		// Format: "shows:<page>"
-		if len(parts) != 2 {
+		// Format: "shows:<telegramID>:<page>"
+		if len(parts) != 3 {
 			return
 		}
-		page, err := strconv.Atoi(parts[1])
+		telegramID, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
 			return
 		}
+		page, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return
+		}
+		payload.TargetTelegramID = telegramID
 		payload.Page = page
 
 	case worker.TaskUpcomingPage:
