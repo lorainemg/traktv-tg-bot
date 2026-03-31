@@ -55,9 +55,55 @@ func (w *Worker) handleUpcoming(task Task) {
 		return
 	}
 
-	msg := formatUpcomingMessage(episodes, settings.location, days)
+	page, totalPages := paginate(episodes, 0)
+	msg := formatUpcomingMessage(page, settings.location, days, 0, totalPages, len(episodes))
 
-	w.results <- task.TextResult(msg)
+	result := task.TextResult(msg)
+	// Callback prefix includes `days` so pagination buttons remember the look-ahead window.
+	result.InlineButtons = paginationButtons(fmt.Sprintf("upcoming:%d", days), 0, totalPages)
+	w.results <- result
+}
+
+// handleUpcomingPage re-fetches upcoming episodes and sends the requested page
+// by editing the original message. Triggered by a pagination button click.
+func (w *Worker) handleUpcomingPage(task Task) {
+	p := task.Payload.(PagePayload)
+
+	w.results <- Result{CallbackQueryID: p.CallbackQueryID}
+
+	users, err := w.store.GetUsersByChatID(task.ChatID)
+	if err != nil {
+		slog.Error("upcoming page: failed to fetch users", "chat_id", task.ChatID, "error", err)
+		return
+	}
+	if len(users) == 0 {
+		return
+	}
+
+	settings, err := w.loadChatSettings(task.ChatID)
+	if err != nil {
+		slog.Error("upcoming page: failed to load chat settings", "chat_id", task.ChatID, "error", err)
+		return
+	}
+
+	today := time.Now().Format("2006-01-02")
+	episodes := w.collectUpcomingEpisodes(users, today, p.Days)
+	if len(episodes) == 0 {
+		return
+	}
+
+	page, totalPages := paginate(episodes, p.Page)
+	if page == nil {
+		return
+	}
+
+	w.results <- Result{
+		ChatID:        task.ChatID,
+		ThreadID:      task.ThreadID,
+		Text:          formatUpcomingMessage(page, settings.location, p.Days, p.Page, totalPages, len(episodes)),
+		EditMessageID: p.MessageID,
+		InlineButtons: paginationButtons(fmt.Sprintf("upcoming:%d", p.Days), p.Page, totalPages),
+	}
 }
 
 // collectUpcomingEpisodes fetches calendars from all users and merges them,
@@ -121,8 +167,14 @@ func sortUpcomingEpisodes(episodeMap map[string]*upcomingEpisode) []upcomingEpis
 	return episodes
 }
 
-func formatUpcomingMessage(episodes []upcomingEpisode, loc *time.Location, days int) string {
-	header := fmt.Sprintf("📅 *Upcoming episodes (%d days)*\n\n", days)
+func formatUpcomingMessage(episodes []upcomingEpisode, loc *time.Location, days, page, totalPages, totalEpisodes int) string {
+	header := fmt.Sprintf("📅 *Upcoming episodes (%d days)*", days)
+	if totalPages > 1 {
+		start := page*pageSize + 1
+		end := start + len(episodes) - 1
+		header += fmt.Sprintf(" _(%d–%d of %d)_", start, end, totalEpisodes)
+	}
+	header += "\n\n"
 
 	shows := make([]string, 0, len(episodes))
 	for _, ep := range episodes {
@@ -132,7 +184,7 @@ func formatUpcomingMessage(episodes []upcomingEpisode, loc *time.Location, days 
 		}
 
 		episodeCode := formatEpisodeCode(ep.Entry.Episode.Season, ep.Entry.Episode.Number)
-		shows = append(shows, fmt.Sprintf("• %s · %s (in %s)\n  %s",
+		shows = append(shows, fmt.Sprintf("▸ %s · %s · in %s\n  👥 %s",
 			ep.Entry.Show.TraktLink(), episodeCode, formatTimeUntil(ep.Entry.FirstAired), strings.Join(users, ", ")))
 	}
 

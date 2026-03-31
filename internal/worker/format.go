@@ -24,6 +24,58 @@ func mustLoadLocation(name string) *time.Location {
 	return loc
 }
 
+// pageSize is the maximum number of items shown per page in paginated lists.
+const pageSize = 10
+
+// paginate returns the sub-slice for the given page and the total page count.
+// [T any] is a type parameter — this single function works for both
+// followedShow and upcomingEpisode slices without duplicating code.
+func paginate[T any](items []T, page int) ([]T, int) {
+	totalPages := (len(items) + pageSize - 1) / pageSize
+
+	if page < 0 || page >= totalPages {
+		return nil, 0
+	}
+
+	start := page * pageSize
+	end := start + pageSize
+	// Cap end so the last page doesn't slice past the end of items.
+	// Go panics on out-of-bounds slice indices (unlike Python which silently truncates).
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return items[start:end], totalPages
+}
+
+// paginationButtons builds a row of ◀ Prev / page indicator / Next ▶ buttons.
+// prefix is the callback data prefix (e.g. "shows" or "upcoming:7") — the page
+// number is appended as "prefix:page". Returns nil when there's only one page.
+func paginationButtons(prefix string, page, totalPages int) [][]InlineButton {
+	if totalPages <= 1 {
+		return nil
+	}
+	var row []InlineButton
+	if page > 0 {
+		row = append(row, InlineButton{
+			Text:         "◀ Prev",
+			CallbackData: fmt.Sprintf("%s:%d", prefix, page-1),
+		})
+	}
+	// Page indicator — clicking it does nothing (handled as "noop" in the bot).
+	row = append(row, InlineButton{
+		Text:         fmt.Sprintf("%d/%d", page+1, totalPages),
+		CallbackData: "noop",
+	})
+	if page < totalPages-1 {
+		row = append(row, InlineButton{
+			Text:         "Next ▶",
+			CallbackData: fmt.Sprintf("%s:%d", prefix, page+1),
+		})
+	}
+	return [][]InlineButton{row}
+}
+
 // hiddenProviders lists TMDB provider names we don't want to show in notifications.
 var hiddenProviders = map[string]bool{
 	"Amazon Prime Video with Ads": true,

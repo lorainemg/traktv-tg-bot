@@ -155,13 +155,19 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 // editResultsMessage edits an existing Telegram message with new text.
 // Used to update the "Watched by" status line on episode notifications.
 func (b *Bot) editResultsMessage(result worker.Result) {
-	// Preserve the original thumbnail by passing the same PhotoURL
+	// Preserve the original thumbnail by passing the same PhotoURL,
+	// otherwise disable link previews to avoid Telegram auto-generating
+	// a preview from mention links or Trakt URLs in the message.
 	var preview *models.LinkPreviewOptions
 	if result.PhotoURL != "" {
 		preview = &models.LinkPreviewOptions{
 			URL:              &result.PhotoURL,
 			PreferLargeMedia: bot.False(),
 			ShowAboveText:    bot.True(),
+		}
+	} else {
+		preview = &models.LinkPreviewOptions{
+			IsDisabled: bot.True(),
 		}
 	}
 
@@ -515,6 +521,14 @@ func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.
 // It parses the callback data, submits a task to the worker, and answers
 // the callback query so Telegram removes the loading spinner.
 func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery) {
+	// "noop" is the page indicator button (e.g. "2/3") — just dismiss the spinner.
+	if cq.Data == "noop" {
+		b.bot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: cq.ID,
+		})
+		return
+	}
+
 	if strings.HasPrefix(cq.Data, "config:") {
 		b.handleConfigCallback(cq)
 		return
@@ -536,5 +550,67 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 				CallbackQueryID: cq.ID,
 			},
 		})
+		return
 	}
+
+	// Pagination callbacks: "shows:<page>" or "upcoming:<days>:<page>"
+	if strings.HasPrefix(cq.Data, "shows:") {
+		b.handlePaginationCallback(cq, worker.TaskShowsPage)
+		return
+	}
+	if strings.HasPrefix(cq.Data, "upcoming:") {
+		b.handlePaginationCallback(cq, worker.TaskUpcomingPage)
+		return
+	}
+}
+
+// handlePaginationCallback parses a pagination callback and submits the
+// appropriate page task. Callback data formats:
+//   - "shows:<page>"            → TaskShowsPage
+//   - "upcoming:<days>:<page>"  → TaskUpcomingPage
+func (b *Bot) handlePaginationCallback(cq *models.CallbackQuery, taskType worker.TaskType) {
+	// Split callback data into parts: ["shows", "1"] or ["upcoming", "7", "2"]
+	parts := strings.Split(cq.Data, ":")
+
+	payload := worker.PagePayload{
+		ChatID:          cq.Message.Message.Chat.ID,
+		CallbackQueryID: cq.ID,
+		MessageID:       cq.Message.Message.ID,
+	}
+
+	switch taskType {
+	case worker.TaskShowsPage:
+		// Format: "shows:<page>"
+		if len(parts) != 2 {
+			return
+		}
+		page, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return
+		}
+		payload.Page = page
+
+	case worker.TaskUpcomingPage:
+		// Format: "upcoming:<days>:<page>"
+		if len(parts) != 3 {
+			return
+		}
+		days, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return
+		}
+		page, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return
+		}
+		payload.Days = days
+		payload.Page = page
+	}
+
+	b.worker.Submit(worker.Task{
+		Type:     taskType,
+		ChatID:   cq.Message.Message.Chat.ID,
+		ThreadID: cq.Message.Message.MessageThreadID,
+		Payload:  payload,
+	})
 }

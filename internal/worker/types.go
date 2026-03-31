@@ -24,6 +24,8 @@ const (
 	TaskShowTimezones                    // = 13
 	TaskSetTimezone                      // = 14
 	TaskUnseen                           // = 15
+	TaskShowsPage                        // = 16 — paginated /shows callback
+	TaskUpcomingPage                     // = 17 — paginated /upcoming callback
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -142,6 +144,17 @@ type UnseenPayload struct {
 	RequesterID      int64  // who ran the command — used as fallback target
 	TargetTelegramID int64  // set when replying to another user's message
 	TargetUsername   string // set when using /unseen @username
+}
+
+// PagePayload carries data for paginated list callbacks (shows/upcoming).
+// When the user clicks a Prev/Next button, the bot sends this so the worker
+// knows which page to render and which message to edit.
+type PagePayload struct {
+	ChatID          int64
+	CallbackQueryID string
+	MessageID       int // the existing message to edit in-place
+	Page            int // zero-based page index
+	Days            int // only used for /upcoming — the look-ahead window in days
 }
 
 // MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.

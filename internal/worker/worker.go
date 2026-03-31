@@ -114,6 +114,10 @@ func (w *Worker) process(task Task) {
 		w.handleSetTimezone(task)
 	case TaskUnseen:
 		w.handleUnseen(task)
+	case TaskShowsPage:
+		w.handleShowsPage(task)
+	case TaskUpcomingPage:
+		w.handleUpcomingPage(task)
 	default:
 		slog.Warn("unknown task type", "type", task.Type)
 	}

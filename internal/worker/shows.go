@@ -17,7 +17,7 @@ type followedShow struct {
 }
 
 // handleShows fetches every authenticated user's watched shows in this chat,
-// merges them into a deduplicated "show → users" map, and sends a summary.
+// merges them into a deduplicated "show → users" map, and sends page 0.
 func (w *Worker) handleShows(task Task) {
 	chatID := task.ChatID
 
@@ -38,7 +38,43 @@ func (w *Worker) handleShows(task Task) {
 		return
 	}
 
-	w.results <- task.TextResult(formatShowsMessage(shows))
+	page, totalPages := paginate(shows, 0)
+	result := task.TextResult(formatShowsMessage(page, 0, totalPages, len(shows)))
+	result.InlineButtons = paginationButtons("shows", 0, totalPages)
+	w.results <- result
+}
+
+// handleShowsPage re-fetches followed shows and sends the requested page
+// by editing the original message. Triggered by a pagination button click.
+func (w *Worker) handleShowsPage(task Task) {
+	p := task.Payload.(PagePayload)
+
+	// Answer the callback query to remove Telegram's loading spinner.
+	w.results <- Result{CallbackQueryID: p.CallbackQueryID}
+
+	users, err := w.store.GetUsersByChatID(task.ChatID)
+	if err != nil {
+		slog.Error("shows page: failed to fetch users", "chat_id", task.ChatID, "error", err)
+		return
+	}
+
+	shows := w.collectFollowedShows(users)
+	if len(shows) == 0 {
+		return
+	}
+
+	page, totalPages := paginate(shows, p.Page)
+	if page == nil {
+		return
+	}
+
+	w.results <- Result{
+		ChatID:        task.ChatID,
+		ThreadID:      task.ThreadID,
+		Text:          formatShowsMessage(page, p.Page, totalPages, len(shows)),
+		EditMessageID: p.MessageID,
+		InlineButtons: paginationButtons("shows", p.Page, totalPages),
+	}
 }
 
 // collectFollowedShows fetches each user's watched shows from Trakt and merges
@@ -98,9 +134,16 @@ func sortFollowedShows(showMap map[string]*followedShow) []followedShow {
 	return shows
 }
 
-// formatShowsMessage builds the Telegram message from the collected shows.
-func formatShowsMessage(shows []followedShow) string {
-	header := "📺 *Followed shows*\n\n"
+// formatShowsMessage builds the Telegram message for a single page of shows.
+// When totalPages <= 1, no range is shown in the header.
+func formatShowsMessage(shows []followedShow, page, totalPages, totalShows int) string {
+	header := "📺 *Followed shows*"
+	if totalPages > 1 {
+		start := page*pageSize + 1
+		end := start + len(shows) - 1
+		header += fmt.Sprintf(" _(%d–%d of %d)_", start, end, totalShows)
+	}
+	header += "\n\n"
 
 	showsMsg := make([]string, 0, len(shows))
 	for _, show := range shows {
@@ -108,7 +151,7 @@ func formatShowsMessage(shows []followedShow) string {
 		for _, user := range show.Users {
 			users = append(users, user.MentionLink())
 		}
-		showsMsg = append(showsMsg, fmt.Sprintf("• %s - %s", show.Show.TraktLink(), strings.Join(users, ", ")))
+		showsMsg = append(showsMsg, fmt.Sprintf("▸ %s\n  👥 %s", show.Show.TraktLink(), strings.Join(users, ", ")))
 	}
-	return header + strings.Join(showsMsg, "\n")
+	return header + strings.Join(showsMsg, "\n\n")
 }

@@ -97,7 +97,7 @@ func formatUnseenMessage(user *storage.User, shows []unseenShow) string {
 
 	lines := make([]string, 0, len(shows))
 	for _, s := range shows {
-		lines = append(lines, fmt.Sprintf("• %s - %d episode(s)", s.Show.TraktLink(), s.Unseen))
+		lines = append(lines, fmt.Sprintf("▸ %s · %d unseen", s.Show.TraktLink(), s.Unseen))
 	}
 	return header + strings.Join(lines, "\n")
 }
