@@ -53,6 +53,7 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unmute", bot.MatchTypePrefix, b.handleUnmute)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/config", bot.MatchTypePrefix, b.handleConfig)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unseen", bot.MatchTypePrefix, b.handleUnseen)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/whowatch", bot.MatchTypePrefix, b.handleWhoWatch)
 
 	b.bot = tgBot
 	return b, nil
@@ -221,7 +222,8 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 /auth - Link your <a href="https://trakt.tv">Trakt.tv</a> account so I can track your shows
 /upcoming [days] - See what's airing soon (default: 7 days, max: 31)
 /unseen [@user] - See unseen episode counts (yours, or reply/mention someone)
-/shows - See all followed shows and who's watching them
+/shows [@user] - List returning shows you or someone else follows
+/whowatch &lt;show&gt; - Check who in this chat watches a specific show
 /register_topic &lt;genre&gt; - Route episode notifications of a genre to this group topic
 /config - Chat settings: country, timezone, auto-delete watched notifications
 /mute - Take a break from episode notifications
@@ -443,6 +445,31 @@ func (b *Bot) handleUnseen(ctx context.Context, tgBot *bot.Bot, update *models.U
 		ChatID:   msg.Chat.ID,
 		ThreadID: msg.MessageThreadID,
 		Payload:  worker.UnseenPayload{UserTarget: parseUserTarget(msg)},
+	})
+}
+
+// handleWhoWatch parses a show name and submits a task to check which
+// chat members watch that show.
+// Usage: /whowatch breaking bad
+func (b *Bot) handleWhoWatch(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	msg := update.Message
+
+	_, query, _ := strings.Cut(msg.Text, " ")
+	query = strings.TrimSpace(query)
+	if query == "" {
+		_, _ = tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          msg.Chat.ID,
+			MessageThreadID: msg.MessageThreadID,
+			Text:            "Usage: /whowatch <show name>\nExample: /whowatch breaking bad",
+		})
+		return
+	}
+
+	b.worker.Submit(worker.Task{
+		Type:     worker.TaskWhoWatches,
+		ChatID:   msg.Chat.ID,
+		ThreadID: msg.MessageThreadID,
+		Payload:  worker.WhoWatchesPayload{Query: query},
 	})
 }
 

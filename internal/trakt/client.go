@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -292,6 +293,32 @@ func (c *Client) RefreshToken(refreshToken string) (*Token, error) {
 		return nil, fmt.Errorf("decoding refreshed token response: %w", err)
 	}
 	return &t, nil
+}
+
+// SearchShows queries Trakt's search API for shows matching the given text.
+// No access token is needed - the search endpoint is public.
+// Uses: GET /search/show?query=...&extended=full
+func (c *Client) SearchShows(query string) ([]SearchResult, error) {
+	// url.QueryEscape encodes the user's text for safe use in a URL,
+	// like encodeURIComponent() in JavaScript or urllib.parse.quote() in Python.
+	path := fmt.Sprintf("/search/show?query=%s&extended=full&limit=1", url.QueryEscape(query))
+
+	resp, err := c.do(http.MethodGet, path, "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("searching shows: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("searching shows: unexpected status %d", resp.StatusCode)
+	}
+
+	var results []SearchResult
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		return nil, fmt.Errorf("decoding search results: %w", err)
+	}
+
+	return results, nil
 }
 
 // MarkEpisodeWatched tells Trakt the user has watched a specific episode.

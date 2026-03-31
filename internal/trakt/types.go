@@ -31,12 +31,12 @@ type Episode struct {
 type Show struct {
 	Title         string     `json:"title"`
 	Status        ShowStatus `json:"status"`         // e.g. "returning series", "ended", "canceled" - from extended=full
-	Genres        []string   `json:"genres"`          // e.g. ["anime", "drama"] - lowercase strings from extended=full
-	AiredEpisodes int        `json:"aired_episodes"`  // total episodes that have aired - from extended=full
-	IDs           ShowIDs    `json:"ids"`             // external identifiers - populated when using ?extended=full
-	Rating        float64    `json:"rating"`          // Trakt community rating (0-10), also from extended=full
-	Runtime       int        `json:"runtime"`         // typical episode length in minutes - from extended=full
-	Images        ShowImages `json:"images"`          // poster, fanart, etc. - from extended=full
+	Genres        []string   `json:"genres"`         // e.g. ["anime", "drama"] - lowercase strings from extended=full
+	AiredEpisodes int        `json:"aired_episodes"` // total episodes that have aired - from extended=full
+	IDs           ShowIDs    `json:"ids"`            // external identifiers - populated when using ?extended=full
+	Rating        float64    `json:"rating"`         // Trakt community rating (0-10), also from extended=full
+	Runtime       int        `json:"runtime"`        // typical episode length in minutes - from extended=full
+	Images        ShowImages `json:"images"`         // poster, fanart, etc. - from extended=full
 }
 
 // TraktLink returns a Markdown link to the show's Trakt page,
@@ -103,6 +103,14 @@ type HistoryEntry struct {
 	WatchedAt string  `json:"watched_at"` // ISO 8601 timestamp of when the user watched it
 	Episode   Episode `json:"episode"`
 	Show      Show    `json:"show"`
+}
+
+// SearchResult represents one item from Trakt's search API.
+// The API wraps each match in an object with a relevance score and the type
+// of media found. We only search for shows, so the Show field is always set.
+type SearchResult struct {
+	Score float64 `json:"score"` // relevance score - higher is a better match
+	Show  Show    `json:"show"`
 }
 
 // --- Request types for POST /sync/history ---

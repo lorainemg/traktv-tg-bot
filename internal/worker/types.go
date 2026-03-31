@@ -26,6 +26,7 @@ const (
 	TaskUnseen                           // = 15
 	TaskShowsPage                        // = 16 — paginated /shows callback
 	TaskUpcomingPage                     // = 17 — paginated /upcoming callback
+	TaskWhoWatches                       // = 18 — check which users watch a show
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -168,6 +169,13 @@ type PagePayload struct {
 	Page             int   // zero-based page index
 	TargetTelegramID int64 // only used for /shows — whose shows to display
 	Days             int   // only used for /upcoming — the look-ahead window in days
+}
+
+// WhoWatchesPayload carries the data needed to check which chat members watch a show.
+// ChatID and ThreadID come from the Task struct itself (used by TextResult),
+// so this payload only needs the search query.
+type WhoWatchesPayload struct {
+	Query string // the show name the user typed, e.g. "breaking bad"
 }
 
 // MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.

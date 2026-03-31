@@ -118,6 +118,8 @@ func (w *Worker) process(task Task) {
 		w.handleShowsPage(task)
 	case TaskUpcomingPage:
 		w.handleUpcomingPage(task)
+	case TaskWhoWatches:
+		w.handleWhoWatches(task)
 	default:
 		slog.Warn("unknown task type", "type", task.Type)
 	}
