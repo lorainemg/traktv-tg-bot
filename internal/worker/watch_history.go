@@ -37,11 +37,6 @@ func (w *Worker) handleCheckWatchHistory() {
 // compares it against their unwatched notification statuses, and updates
 // any matches.
 func (w *Worker) checkUserWatchHistory(user *storage.User, chatID int64) {
-	if err := w.ensureFreshToken(user); err != nil {
-		slog.Error("watch history: failed to refresh token", "user_id", user.ID, "error", err)
-		return
-	}
-
 	unwatched, err := w.store.GetUnwatchedStatusesByUser(user.ID)
 	if err != nil {
 		slog.Error("failed to fetch unwatched statuses", "user_id", user.ID, "error", err)
@@ -54,7 +49,7 @@ func (w *Worker) checkUserWatchHistory(user *storage.User, chatID int64) {
 	// Look back 2 hours to catch watches since the last poll, with a safety margin
 	startAt := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 
-	history, err := w.trakt.GetWatchHistory(user.TraktAccessToken, startAt)
+	history, err := w.trakt.GetWatchHistory(w.tokenFor(user), startAt)
 	if err != nil {
 		slog.Error("failed to fetch watch history", "user_id", user.ID, "error", err)
 		return

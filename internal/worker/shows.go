@@ -25,12 +25,7 @@ func (w *Worker) handleShows(task Task) {
 		return
 	}
 
-	if err := w.ensureFreshToken(user); err != nil {
-		slog.Error("shows: failed to refresh token", "user_id", user.ID, "error", err)
-		return
-	}
-
-	entries, err := w.trakt.GetWatchedShows(user.TraktAccessToken)
+	entries, err := w.trakt.GetWatchedShows(w.tokenFor(user))
 	if err != nil {
 		slog.Error("shows: failed to fetch watched shows", "user_id", user.ID, "error", err)
 		return
@@ -65,12 +60,7 @@ func (w *Worker) handleShowsPage(task Task) {
 		return
 	}
 
-	if err := w.ensureFreshToken(user); err != nil {
-		slog.Error("shows page: failed to refresh token", "user_id", user.ID, "error", err)
-		return
-	}
-
-	entries, err := w.trakt.GetWatchedShows(user.TraktAccessToken)
+	entries, err := w.trakt.GetWatchedShows(w.tokenFor(user))
 	if err != nil {
 		slog.Error("shows page: failed to fetch watched shows", "user_id", user.ID, "error", err)
 		return

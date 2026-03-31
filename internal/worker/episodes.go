@@ -83,19 +83,16 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 	for i := range users {
 		user := &users[i] // pointer to slice element — mutations propagate back
 
-		if err := w.ensureFreshToken(user); err != nil {
-			slog.Error("failed to refresh token", "user_id", user.ID, "error", err)
-			continue
-		}
+		token := w.tokenFor(user)
 
-		watchlistShows, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
+		watchlistShows, err := w.trakt.GetWatchlistShows(token)
 		if err != nil {
 			slog.Error("failed to fetch watchlist", "user_id", user.ID, "error", err)
 			// Non-fatal - proceed without filtering (nil map reads return zero values safely)
 			watchlistShows = nil
 		}
 
-		entries, err := w.trakt.GetCalendar(user.TraktAccessToken, day, 5)
+		entries, err := w.trakt.GetCalendar(token, day, 5)
 		if err != nil {
 			slog.Error("failed to fetch calendar", "user_id", user.ID, "error", err)
 			continue

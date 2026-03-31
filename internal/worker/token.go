@@ -6,11 +6,28 @@ import (
 	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
+	"github.com/loraine/traktv-tg-bot/internal/trakt"
 )
 
 // tokenRefreshBuffer is how far in advance of expiry we refresh the token.
 // Refreshing early avoids a race where the token expires mid-request.
 const tokenRefreshBuffer = 24 * time.Hour
+
+// tokenFor returns a trakt.TokenSource that ensures the user's access token
+// is fresh before returning it. Pass this to any authenticated Trakt client
+// method — the token refresh happens automatically inside the closure.
+//
+// This is a closure: the returned function "captures" the user pointer,
+// so when the Trakt client calls it later, it still has access to the
+// user's token fields. Like a lambda capturing variables in C# or Python.
+func (w *Worker) tokenFor(user *storage.User) trakt.TokenSource {
+	return func() (string, error) {
+		if err := w.ensureFreshToken(user); err != nil {
+			return "", err
+		}
+		return user.TraktAccessToken, nil
+	}
+}
 
 // ensureFreshToken checks if a user's Trakt access token is expired or about
 // to expire, and refreshes it if needed. Takes a *storage.User (pointer) so

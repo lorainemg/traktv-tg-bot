@@ -71,13 +71,8 @@ func (w *Worker) resolveWatchUser(payload MarkWatchedPayload) *storage.User {
 // markOnTrakt calls the Trakt API to mark an episode as watched.
 // Returns false on failure - the caller is responsible for user-facing feedback.
 func (w *Worker) markOnTrakt(user *storage.User, notification *storage.Notification) bool {
-	if err := w.ensureFreshToken(user); err != nil {
-		slog.Error("mark watched: failed to refresh token", "user_id", user.ID, "error", err)
-		return false
-	}
-
 	err := w.trakt.MarkEpisodeWatched(
-		user.TraktAccessToken,
+		w.tokenFor(user),
 		notification.TraktShowID,
 		notification.Season,
 		notification.EpisodeNumber,

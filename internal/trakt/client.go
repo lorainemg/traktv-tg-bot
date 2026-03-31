@@ -18,6 +18,13 @@ const (
 	maxRetries     = 3 // max times to retry a request after a 429
 )
 
+// TokenSource is a function that returns a valid access token, refreshing it
+// if necessary. The caller (typically the worker) provides the implementation.
+// This keeps token-refresh logic out of the Trakt client — the client just
+// calls the function and gets a ready-to-use token.
+// Similar to oauth2.TokenSource in Go's standard oauth2 package.
+type TokenSource func() (string, error)
+
 // Client handles all communication with the Trakt.tv API.
 type Client struct {
 	clientID     string       // Trakt API key, sent in every request
@@ -66,7 +73,19 @@ func (c *Client) newRequest(method, path, accessToken string, jsonBody []byte) (
 
 // do executes an HTTP request with automatic retry on 429 (rate limited).
 // If body is non-nil, it gets marshalled to JSON automatically.
-func (c *Client) do(method, path, accessToken string, body any) (*http.Response, error) {
+// token can be nil for unauthenticated endpoints (search, OAuth).
+func (c *Client) do(method, path string, token TokenSource, body any) (*http.Response, error) {
+	// Resolve the access token once, before any retries.
+	// If token is nil this is an unauthenticated request — accessToken stays "".
+	var accessToken string
+	if token != nil {
+		var err error
+		accessToken, err = token()
+		if err != nil {
+			return nil, fmt.Errorf("getting access token: %w", err)
+		}
+	}
+
 	// Marshal once so we can reuse the bytes across retries.
 	var jsonBody []byte
 	if body != nil {
@@ -112,10 +131,10 @@ func (c *Client) do(method, path, accessToken string, body any) (*http.Response,
 
 // GetCalendar fetches upcoming episodes for the user's followed shows.
 // Uses: GET /calendars/my/shows/:start_date/:days
-func (c *Client) GetCalendar(accessToken, startDate string, days int) ([]CalendarEntry, error) {
+func (c *Client) GetCalendar(token TokenSource, startDate string, days int) ([]CalendarEntry, error) {
 	path := fmt.Sprintf("/calendars/my/shows/%s/%d?extended=full", startDate, days)
 
-	resp, err := c.do(http.MethodGet, path, accessToken, nil)
+	resp, err := c.do(http.MethodGet, path, token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching calendar: %w", err)
 	}
@@ -136,8 +155,8 @@ func (c *Client) GetCalendar(accessToken, startDate string, days int) ([]Calenda
 // GetWatchlistShows fetches the user's show watchlist and returns a set of
 // Trakt show IDs. This is used to exclude watchlisted (but not watched)
 // shows from episode notifications.
-func (c *Client) GetWatchlistShows(accessToken string) (map[int]bool, error) {
-	resp, err := c.do(http.MethodGet, "/users/me/watchlist/shows", accessToken, nil)
+func (c *Client) GetWatchlistShows(token TokenSource) (map[int]bool, error) {
+	resp, err := c.do(http.MethodGet, "/users/me/watchlist/shows", token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching watchlist: %w", err)
 	}
@@ -164,8 +183,8 @@ func (c *Client) GetWatchlistShows(accessToken string) (map[int]bool, error) {
 // GetWatchedShows fetches shows the user has actually started watching
 // (at least one episode watched). Returns full show details plus play counts.
 // Uses: GET /users/me/watched/shows
-func (c *Client) GetWatchedShows(accessToken string) ([]WatchedShowEntry, error) {
-	resp, err := c.do(http.MethodGet, "/users/me/watched/shows?extended=full", accessToken, nil)
+func (c *Client) GetWatchedShows(token TokenSource) ([]WatchedShowEntry, error) {
+	resp, err := c.do(http.MethodGet, "/users/me/watched/shows?extended=full", token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching watched shows: %w", err)
 	}
@@ -187,10 +206,10 @@ func (c *Client) GetWatchedShows(accessToken string) ([]WatchedShowEntry, error)
 // startAt limits results to watches after this ISO 8601 timestamp, so we only
 // get recent activity instead of the user's entire history.
 // Uses: GET /users/me/history/episodes?start_at=...
-func (c *Client) GetWatchHistory(accessToken, startAt string) ([]HistoryEntry, error) {
+func (c *Client) GetWatchHistory(token TokenSource, startAt string) ([]HistoryEntry, error) {
 	path := fmt.Sprintf("/users/me/history/episodes?start_at=%s", startAt)
 
-	resp, err := c.do(http.MethodGet, path, accessToken, nil)
+	resp, err := c.do(http.MethodGet, path, token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching watch history: %w", err)
 	}
@@ -211,7 +230,7 @@ func (c *Client) GetWatchHistory(accessToken, startAt string) ([]HistoryEntry, e
 // RequestDeviceCode starts the device auth flow.
 // Returns a DeviceCode containing the user_code the user must enter at the verification URL.
 func (c *Client) RequestDeviceCode() (*DeviceCode, error) {
-	resp, err := c.do(http.MethodPost, "/oauth/device/code", "", struct {
+	resp, err := c.do(http.MethodPost, "/oauth/device/code", nil, struct {
 		ClientID string `json:"client_id"`
 	}{ClientID: c.clientID})
 	if err != nil {
@@ -234,7 +253,7 @@ func (c *Client) RequestDeviceCode() (*DeviceCode, error) {
 // PollForToken exchanges a device_code for OAuth tokens.
 // Returns (nil, nil) if the user hasn't authorized yet (keep polling).
 func (c *Client) PollForToken(deviceCode string) (*Token, error) {
-	resp, err := c.do(http.MethodPost, "/oauth/device/token", "", struct {
+	resp, err := c.do(http.MethodPost, "/oauth/device/token", nil, struct {
 		DeviceCode   string `json:"code"`
 		ClientID     string `json:"client_id"`
 		ClientSecret string `json:"client_secret"`
@@ -266,7 +285,7 @@ func (c *Client) PollForToken(deviceCode string) (*Token, error) {
 // After a successful refresh, the OLD refresh token is invalidated — callers
 // must save both the new AccessToken and new RefreshToken.
 func (c *Client) RefreshToken(refreshToken string) (*Token, error) {
-	resp, err := c.do(http.MethodPost, "/oauth/token", "", struct {
+	resp, err := c.do(http.MethodPost, "/oauth/token", nil, struct {
 		RefreshToken string `json:"refresh_token"`
 		ClientID     string `json:"client_id"`
 		ClientSecret string `json:"client_secret"`
@@ -303,7 +322,7 @@ func (c *Client) SearchShows(query string) ([]SearchResult, error) {
 	// like encodeURIComponent() in JavaScript or urllib.parse.quote() in Python.
 	path := fmt.Sprintf("/search/show?query=%s&extended=full&limit=1", url.QueryEscape(query))
 
-	resp, err := c.do(http.MethodGet, path, "", nil)
+	resp, err := c.do(http.MethodGet, path, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("searching shows: %w", err)
 	}
@@ -323,7 +342,7 @@ func (c *Client) SearchShows(query string) ([]SearchResult, error) {
 
 // MarkEpisodeWatched tells Trakt the user has watched a specific episode.
 // Uses: POST /sync/history - expects 201 Created on success.
-func (c *Client) MarkEpisodeWatched(accessToken string, traktShowID, season, episodeNumber int) error {
+func (c *Client) MarkEpisodeWatched(token TokenSource, traktShowID, season, episodeNumber int) error {
 	// Build the nested request body: shows → seasons → episodes
 	reqBody := SyncHistoryRequest{
 		Shows: []SyncShowEntry{
@@ -344,7 +363,7 @@ func (c *Client) MarkEpisodeWatched(accessToken string, traktShowID, season, epi
 		},
 	}
 
-	resp, err := c.do(http.MethodPost, "/sync/history", accessToken, reqBody)
+	resp, err := c.do(http.MethodPost, "/sync/history", token, reqBody)
 	if err != nil {
 		return fmt.Errorf("marking episode watched: %w", err)
 	}

@@ -115,18 +115,15 @@ func (w *Worker) collectUpcomingEpisodes(users []storage.User, today string, day
 	for i := range users {
 		user := &users[i]
 
-		if err := w.ensureFreshToken(user); err != nil {
-			slog.Error("upcoming: failed to refresh token", "user_id", user.ID, "error", err)
-			continue
-		}
+		token := w.tokenFor(user)
 
-		watchlistShows, err := w.trakt.GetWatchlistShows(user.TraktAccessToken)
+		watchlistShows, err := w.trakt.GetWatchlistShows(token)
 		if err != nil {
 			slog.Error("upcoming: failed to fetch watchlist", "user_id", user.ID, "error", err)
 			watchlistShows = nil
 		}
 
-		entries, err := w.trakt.GetCalendar(user.TraktAccessToken, today, days)
+		entries, err := w.trakt.GetCalendar(token, today, days)
 		if err != nil {
 			slog.Error("upcoming: failed to fetch calendar", "user_id", user.ID, "error", err)
 			continue

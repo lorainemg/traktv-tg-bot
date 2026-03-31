@@ -68,11 +68,7 @@ func (w *Worker) findWatchers(users []storage.User, traktShowID int) []*storage.
 		go func() {
 			defer wg.Done()
 
-			if err := w.ensureFreshToken(user); err != nil {
-				slog.Error("watch history: failed to refresh token", "user_id", user.ID, "error", err)
-				return
-			}
-			rep, err := w.trakt.GetWatchedShows(user.TraktAccessToken)
+			rep, err := w.trakt.GetWatchedShows(w.tokenFor(user))
 			if err != nil {
 				slog.Error("watch history: failed to fetch watched shows", "user_id", user.ID, "error", err)
 				return
