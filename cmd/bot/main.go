@@ -153,7 +153,7 @@ func main() {
 	// production runs every 30min to avoid hammering the Trakt API.
 	tickInterval := 30 * time.Minute
 	if strings.HasPrefix(strings.ToLower(os.Getenv("ENV")), "dev") {
-		tickInterval = 30 * time.Second
+		tickInterval = 1 * time.Minute
 	}
 	slog.Info("ticker interval configured", "interval", tickInterval)
 

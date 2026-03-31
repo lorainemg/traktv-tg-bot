@@ -476,8 +476,11 @@ func parseUserTarget(msg *models.Message) worker.UserTarget {
 
 	if arg != "" {
 		target.TargetUsername = arg
-	} else if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil {
-		// Command was sent as a reply — target the replied-to user
+	} else if msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil &&
+		msg.ReplyToMessage.ForumTopicCreated == nil {
+		// Command was sent as a reply — target the replied-to user.
+		// The ForumTopicCreated check filters out the service message that
+		// Telegram auto-sets as ReplyToMessage for every message in a topic.
 		target.TargetTelegramID = msg.ReplyToMessage.From.ID
 	}
 
