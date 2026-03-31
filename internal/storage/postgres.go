@@ -361,6 +361,7 @@ func (s *PostgresStore) CreateOrUpdateChatConfig(config *ChatConfig) error {
 			"country":        config.Country,
 			"timezone":       config.Timezone,
 			"delete_watched": config.DeleteWatched,
+			"notify_hours":   config.NotifyHours,
 		}).
 		FirstOrCreate(config)
 	if result.Error != nil {

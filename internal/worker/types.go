@@ -27,6 +27,7 @@ const (
 	TaskShowsPage                        // = 16 — paginated /shows callback
 	TaskUpcomingPage                     // = 17 — paginated /upcoming callback
 	TaskWhoWatches                       // = 18 — check which users watch a show
+	TaskPromptNotifyHours                // = 19 — prompt user for notify window hours
 )
 
 // Task represents a unit of work submitted to the worker queue.

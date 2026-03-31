@@ -157,8 +157,9 @@ func sortUpcomingEpisodes(episodeMap map[string]*upcomingEpisode) []upcomingEpis
 
 	// sort.Slice sorts in-place using a "less" function - like Python's
 	// list.sort(key=...) but you provide a comparison function instead of a key.
+	// .Before() is the time.Time equivalent of < for timestamps.
 	sort.Slice(episodes, func(i, j int) bool {
-		return episodes[i].Entry.FirstAired < episodes[j].Entry.FirstAired
+		return episodes[i].Entry.FirstAired.Before(episodes[j].Entry.FirstAired)
 	})
 
 	return episodes
@@ -190,12 +191,7 @@ func formatUpcomingMessage(episodes []upcomingEpisode, loc *time.Location, days,
 
 // formatTimeUntil returns a human-readable string like "2d 5h" or "3h 20m"
 // representing how long until the given air date.
-func formatTimeUntil(isoDate string) string {
-	airTime, err := time.Parse("2006-01-02T15:04:05.000Z", isoDate)
-	if err != nil {
-		return "?"
-	}
-
+func formatTimeUntil(airTime time.Time) string {
 	// time.Until returns a Duration - the difference between airTime and now.
 	// Like Python's (future - datetime.now()), but returns a single Duration
 	// value instead of a timedelta. We break it into days/hours/minutes manually.

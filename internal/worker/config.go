@@ -3,6 +3,7 @@ package worker
 import (
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 // Default chat config values - used when no config row exists in the DB.
 const (
 	defaultCountry       = "US"
-	defaultTimezoneName      = "America/New_York"
+	defaultTimezoneName  = "America/New_York"
 	defaultDeleteWatched = true
+	defaultNotifyHours   = 12
 )
 
 // handleShowConfig fetches the chat's configuration from the database
@@ -28,8 +30,8 @@ func (w *Worker) handleShowConfig(task Task) {
 		return
 	}
 
-	country, timezone, deleteWatched := resolveConfig(config)
-	w.results <- buildConfigResult(task.ChatID, task.ThreadID, 0, country, timezone, deleteWatched)
+	country, timezone, deleteWatched, notifyHours := resolveConfig(config)
+	w.results <- buildConfigResult(task.ChatID, task.ThreadID, 0, country, timezone, deleteWatched, notifyHours)
 }
 
 // handleToggleDeleteWatched flips the DeleteWatched setting and edits
@@ -48,7 +50,7 @@ func (w *Worker) handleToggleDeleteWatched(task Task) {
 	}
 
 	// If no config exists yet, create one with defaults
-	country, timezone, deleteWatched := resolveConfig(config)
+	country, timezone, deleteWatched, notifyHours := resolveConfig(config)
 
 	// Flip the boolean
 	deleteWatched = !deleteWatched
@@ -58,6 +60,7 @@ func (w *Worker) handleToggleDeleteWatched(task Task) {
 		Country:       country,
 		Timezone:      timezone,
 		DeleteWatched: deleteWatched,
+		NotifyHours:   notifyHours,
 	})
 	if err != nil {
 		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
@@ -72,7 +75,7 @@ func (w *Worker) handleToggleDeleteWatched(task Task) {
 	}
 
 	// Edit the config message to show updated values
-	w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, timezone, deleteWatched)
+	w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, timezone, deleteWatched, notifyHours)
 }
 
 // handlePromptCountry sets up pending input and sends a prompt asking for a country code.
@@ -110,6 +113,36 @@ func (w *Worker) handlePromptCountry(task Task) {
 	}
 }
 
+// handlePromptNotifyHours sets up pending input and sends a prompt asking
+// for the number of hours before air time to send notifications.
+func (w *Worker) handlePromptNotifyHours(task Task) {
+	payload, ok := task.Payload.(ConfigCallbackPayload)
+	if !ok {
+		slog.Error("invalid payload for config:notify")
+		return
+	}
+
+	w.setPendingInput(payload.ChatID, pendingInput{
+		action:    "notify",
+		messageID: payload.MessageID,
+	})
+
+	w.results <- Result{
+		ChatID:          payload.ChatID,
+		CallbackQueryID: payload.CallbackQueryID,
+		Text:            "Send the notify window in hours",
+	}
+
+	w.results <- Result{
+		ChatID:                payload.ChatID,
+		ThreadID:              task.ThreadID,
+		Text:                  fmt.Sprintf("[​](tg://user?id=%d)Reply with a number of hours (e.g. `12`, `24`, `48`)", payload.UserTelegramID),
+		ForceReply:            true,
+		Selective:             true,
+		InputFieldPlaceholder: "e.g. 12, 24, 48",
+	}
+}
+
 // handleShowTimezones looks up timezones for the chat's country and either
 // auto-sets the timezone (single-timezone country) or shows inline buttons
 // for the user to pick from (multi-timezone country).
@@ -126,7 +159,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 		return
 	}
 
-	country, _, deleteWatched := resolveConfig(config)
+	country, _, deleteWatched, notifyHours := resolveConfig(config)
 
 	timezones := data.GetTimezonesForCountry(country)
 	if len(timezones) == 0 {
@@ -146,6 +179,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 			Country:       country,
 			Timezone:      timezones[0],
 			DeleteWatched: deleteWatched,
+			NotifyHours:   notifyHours,
 		})
 		if err != nil {
 			slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
@@ -157,7 +191,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 			CallbackQueryID: payload.CallbackQueryID,
 			Text:            fmt.Sprintf("Timezone set to %s", timezones[0]),
 		}
-		w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, timezones[0], deleteWatched)
+		w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, timezones[0], deleteWatched, notifyHours)
 		return
 	}
 
@@ -199,13 +233,14 @@ func (w *Worker) handleSetTimezone(task Task) {
 		return
 	}
 
-	country, _, deleteWatched := resolveConfig(config)
+	country, _, deleteWatched, notifyHours := resolveConfig(config)
 
 	err = w.store.CreateOrUpdateChatConfig(&storage.ChatConfig{
 		ChatID:        payload.ChatID,
 		Country:       country,
 		Timezone:      payload.Timezone,
 		DeleteWatched: deleteWatched,
+		NotifyHours:   notifyHours,
 	})
 	if err != nil {
 		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
@@ -219,7 +254,7 @@ func (w *Worker) handleSetTimezone(task Task) {
 	}
 
 	// Replace the timezone picker with the updated config message
-	w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, payload.Timezone, deleteWatched)
+	w.results <- buildConfigResult(payload.ChatID, task.ThreadID, payload.MessageID, country, payload.Timezone, deleteWatched, notifyHours)
 }
 
 // handleTextInput processes text messages that were sent in response to a pending prompt.
@@ -238,6 +273,8 @@ func (w *Worker) handleTextInput(task Task) {
 	switch pending.action {
 	case "country":
 		w.handleCountryInput(task.ThreadID, payload, pending)
+	case "notify":
+		w.handleNotifyHoursInput(task.ThreadID, payload, pending)
 	}
 }
 
@@ -262,13 +299,14 @@ func (w *Worker) handleCountryInput(threadID int, payload TextInputPayload, pend
 		return
 	}
 
-	_, timezone, deleteWatched := resolveConfig(config)
+	_, timezone, deleteWatched, notifyHours := resolveConfig(config)
 
 	err = w.store.CreateOrUpdateChatConfig(&storage.ChatConfig{
 		ChatID:        payload.ChatID,
 		Country:       country,
 		Timezone:      timezone,
 		DeleteWatched: deleteWatched,
+		NotifyHours:   notifyHours,
 	})
 	if err != nil {
 		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
@@ -277,7 +315,39 @@ func (w *Worker) handleCountryInput(threadID int, payload TextInputPayload, pend
 	}
 
 	// Edit the original config message with updated values
-	w.results <- buildConfigResult(payload.ChatID, threadID, pending.messageID, country, timezone, deleteWatched)
+	w.results <- buildConfigResult(payload.ChatID, threadID, pending.messageID, country, timezone, deleteWatched, notifyHours)
+}
+
+// handleNotifyHoursInput validates and saves a notify window from user text input.
+func (w *Worker) handleNotifyHoursInput(threadID int, payload TextInputPayload, pending pendingInput) {
+	hours, err := strconv.Atoi(strings.TrimSpace(payload.Text))
+	if err != nil || hours < 1 || hours > 24*7 {
+		w.results <- Result{ChatID: payload.ChatID, ThreadID: threadID, Text: "Please enter a number between 1 and 168. Try again with /config."}
+		return
+	}
+	// Load current config to preserve other settings
+	config, err := w.store.GetChatConfig(payload.ChatID)
+	if err != nil {
+		slog.Error("failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
+		return
+	}
+
+	country, timezone, deleteWatched, _ := resolveConfig(config)
+
+	err = w.store.CreateOrUpdateChatConfig(&storage.ChatConfig{
+		ChatID:        payload.ChatID,
+		Country:       country,
+		Timezone:      timezone,
+		DeleteWatched: deleteWatched,
+		NotifyHours:   hours,
+	})
+	if err != nil {
+		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
+		w.results <- Result{ChatID: payload.ChatID, ThreadID: threadID, Text: "Something went wrong, please try again."}
+		return
+	}
+
+	w.results <- buildConfigResult(payload.ChatID, threadID, pending.messageID, country, timezone, deleteWatched, hours)
 }
 
 // chatSettings holds the resolved config values for a chat, including a parsed
@@ -287,6 +357,7 @@ type chatSettings struct {
 	timezone      string
 	location      *time.Location
 	deleteWatched bool
+	notifyHours   int
 }
 
 // loadChatSettings fetches the config for a chat and resolves all values,
@@ -298,7 +369,7 @@ func (w *Worker) loadChatSettings(chatID int64) (chatSettings, error) {
 		return chatSettings{}, fmt.Errorf("fetching chat config for chat %d: %w", chatID, err)
 	}
 
-	country, tzName, deleteWatched := resolveConfig(config)
+	country, tzName, deleteWatched, notifyHours := resolveConfig(config)
 
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
@@ -312,15 +383,17 @@ func (w *Worker) loadChatSettings(chatID int64) (chatSettings, error) {
 		timezone:      tzName,
 		location:      loc,
 		deleteWatched: deleteWatched,
+		notifyHours:   notifyHours,
 	}, nil
 }
 
 // resolveConfig extracts values from a ChatConfig, falling back to defaults
 // for any unset fields or when config is nil.
-func resolveConfig(config *storage.ChatConfig) (country, timezone string, deleteWatched bool) {
+func resolveConfig(config *storage.ChatConfig) (country, timezone string, deleteWatched bool, notifyHours int) {
 	country = defaultCountry
 	timezone = defaultTimezoneName
 	deleteWatched = defaultDeleteWatched
+	notifyHours = defaultNotifyHours
 
 	if config != nil {
 		if config.Country != "" {
@@ -330,6 +403,10 @@ func resolveConfig(config *storage.ChatConfig) (country, timezone string, delete
 			timezone = config.Timezone
 		}
 		deleteWatched = config.DeleteWatched
+		// GORM sets new int columns to 0 for existing rows, so treat 0 as "not set"
+		if config.NotifyHours > 0 {
+			notifyHours = config.NotifyHours
+		}
 	}
 	return
 }
@@ -337,17 +414,18 @@ func resolveConfig(config *storage.ChatConfig) (country, timezone string, delete
 // buildConfigResult constructs a Result with the formatted settings message
 // and inline buttons. When editMessageID is non-zero, the result edits an
 // existing message instead of sending a new one.
-func buildConfigResult(chatID int64, threadID int, editMessageID int, country, timezone string, deleteWatched bool) Result {
-	// Escape underscores for MarkdownV1 - characters like _ in "America/New_York"
-	// would otherwise be parsed as italic formatting markers by Telegram.
-	escapedTimezone := strings.ReplaceAll(timezone, "_", "\\_")
-
+func buildConfigResult(chatID int64, threadID int, editMessageID int, country, timezone string, deleteWatched bool, notifyHours int) Result {
 	text := fmt.Sprintf(
 		"⚙️ *Chat Settings*\n\n"+
-			"Country: %s\n"+
-			"Timezone: %s\n"+
-			"Delete watched: %s",
-		country, escapedTimezone, deleteLabel(deleteWatched),
+			"🌍 Country: *%s*\n"+
+			"_Used for streaming provider lookups_\n\n"+
+			"🕐 Timezone: *%s*\n"+
+			"_Controls the time shown in notifications_\n\n"+
+			"🗑 Delete watched: *%s*\n"+
+			"_Auto-delete messages once everyone has watched_\n\n"+
+			"🔔 Notify window: *%dh*\n"+
+			"_Only notify about episodes airing within this many hours_",
+		country, timezone, deleteLabel(deleteWatched), notifyHours,
 	)
 
 	return Result{
@@ -362,6 +440,9 @@ func buildConfigResult(chatID int64, threadID int, editMessageID int, country, t
 			},
 			{
 				{Text: "Toggle Delete Watched", CallbackData: "config:delete"},
+			},
+			{
+				{Text: "Change Notify Window", CallbackData: "config:notify"},
 			},
 		},
 	}

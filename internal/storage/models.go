@@ -96,7 +96,8 @@ type ChatConfig struct {
 	ChatID        int64  `gorm:"uniqueIndex"` // one config per chat
 	Country       string // ISO 3166-1 alpha-2 country code, e.g. "US", "GB"
 	Timezone      string // IANA timezone, e.g. "America/New_York"
-	DeleteWatched bool   // when true, delete episode messages after all users have watched
+	DeleteWatched bool // when true, delete episode messages after all users have watched
+	NotifyHours   int  // how many hours before air time to include in notifications (0 = use default)
 }
 
 // WatchStatus tracks whether a specific user has watched a notified episode.

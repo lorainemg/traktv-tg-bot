@@ -225,7 +225,7 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 /shows [@user] - List returning shows you or someone else follows
 /whowatch &lt;show&gt; - Check who in this chat watches a specific show
 /register_topic &lt;genre&gt; - Route episode notifications of a genre to this group topic
-/config - Chat settings: country, timezone, auto-delete watched notifications
+/config - Chat settings: country, timezone, auto-delete watched notifications, notify window
 
 Just /sub to get started and I'll handle the rest!`
 
@@ -388,6 +388,13 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 	case action == "country":
 		b.worker.Submit(worker.Task{
 			Type:     worker.TaskPromptCountry,
+			ChatID:   payload.ChatID,
+			ThreadID: threadID,
+			Payload:  payload,
+		})
+	case action == "notify":
+		b.worker.Submit(worker.Task{
+			Type:     worker.TaskPromptNotifyHours,
 			ChatID:   payload.ChatID,
 			ThreadID: threadID,
 			Payload:  payload,

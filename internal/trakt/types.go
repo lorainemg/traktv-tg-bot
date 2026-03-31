@@ -1,6 +1,9 @@
 package trakt
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // ShowStatus is a typed string for the status field Trakt returns on shows.
 // Using a named type instead of bare string makes valid values discoverable
@@ -17,7 +20,7 @@ const (
 
 // CalendarEntry represents one item from the Trakt calendar API response.
 type CalendarEntry struct {
-	FirstAired string  `json:"first_aired"`
+	FirstAired time.Time `json:"first_aired"`
 	Episode    Episode `json:"episode"`
 	Show       Show    `json:"show"`
 }

@@ -90,14 +90,15 @@ func formatNotificationMessage(n *storage.Notification, loc *time.Location) stri
 	// Line 1: show title + episode code
 	msg := fmt.Sprintf("📺 *%s* · %s", n.ShowTitle, formatEpisodeCode(n.Season, n.EpisodeNumber))
 
-	// Line 2: episode title in italics
-	msg += fmt.Sprintf("\n_%s_", n.EpisodeTitle)
-
-	// Line 3: date, time, and runtime
-	msg += fmt.Sprintf("\n\n🗓 %s", airDate)
+	// Line 2: episode title in italics, with runtime if available
 	if n.Runtime > 0 {
-		msg += fmt.Sprintf(" · ⏱ %dm", n.Runtime)
+		msg += fmt.Sprintf("\n_%s_ · ⏱ %dm", n.EpisodeTitle, n.Runtime)
+	} else {
+		msg += fmt.Sprintf("\n_%s_", n.EpisodeTitle)
 	}
+
+	// Line 3: air date
+	msg += fmt.Sprintf("\n\n🗓 %s", airDate)
 
 	// Line 4: ratings - Trakt score + IMDb link
 	if n.Rating > 0 || n.IMDBID != "" {
@@ -179,7 +180,7 @@ func formatWatchedByLine(statuses []storage.WatchStatus, haveAllWatched bool) st
 // date converted to the given timezone. The loc parameter lets callers pass a
 // per-chat timezone; use defaultTimezone when none is configured.
 func formatAirDate(isoDate string, loc *time.Location) string {
-	t, err := time.Parse("2006-01-02T15:04:05.000Z", isoDate)
+	t, err := time.Parse(time.RFC3339, isoDate)
 	if err != nil {
 		return isoDate
 	}

@@ -56,7 +56,7 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 		topics = nil
 	}
 
-	episodes := w.collectChatEpisodes(users, day)
+	episodes := w.collectChatEpisodes(users, day, settings.notifyHours)
 
 	slog.Info("found episodes for chat", "count", len(episodes), "chat_id", chatID)
 
@@ -77,7 +77,9 @@ func (w *Worker) checkChatEpisodes(chatID int64, users []storage.User, day strin
 // collectChatEpisodes fetches calendar entries from every user and merges them
 // into a single deduplicated map. The map key "ShowTitle-S02E01" ensures each
 // episode appears only once even if multiple users follow the same show.
-func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[string]chatEpisode {
+// notifyHours controls how far ahead to look: only episodes airing within that
+// many hours are included.
+func (w *Worker) collectChatEpisodes(users []storage.User, day string, notifyHours int) map[string]chatEpisode {
 	episodes := make(map[string]chatEpisode)
 
 	for i := range users {
@@ -92,14 +94,22 @@ func (w *Worker) collectChatEpisodes(users []storage.User, day string) map[strin
 			watchlistShows = nil
 		}
 
-		entries, err := w.trakt.GetCalendar(token, day, 5)
+		// Fetch enough calendar days to cover the notify window.
+		// e.g. 12h → 1 day, 36h → 2 days, 48h → 3 days
+		calendarDays := notifyHours/24 + 1
+		entries, err := w.trakt.GetCalendar(token, day, calendarDays)
 		if err != nil {
 			slog.Error("failed to fetch calendar", "user_id", user.ID, "error", err)
 			continue
 		}
 
+		window := time.Duration(notifyHours) * time.Hour
 		for _, entry := range entries {
 			if watchlistShows[entry.Show.IDs.Trakt] {
+				continue
+			}
+			// Only notify for episodes airing within the configured window
+			if time.Until(entry.FirstAired) > window {
 				continue
 			}
 			key := episodeKey(entry.Show.IDs.Trakt, entry.Episode.Season, entry.Episode.Number)
@@ -232,7 +242,7 @@ func buildNotification(entry trakt.CalendarEntry, chatID int64, watchInfo *tmdb.
 		EpisodeNumber: entry.Episode.Number,
 		TraktShowID:   entry.Show.IDs.Trakt,
 		EpisodeTitle:  entry.Episode.Title,
-		FirstAired:    entry.FirstAired,
+		FirstAired:    entry.FirstAired.Format(time.RFC3339),
 		Runtime:       entry.Show.Runtime,
 		Rating:        entry.Show.Rating,
 		ShowSlug:      entry.Show.IDs.Slug,

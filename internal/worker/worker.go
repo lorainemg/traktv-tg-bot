@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/tmdb"
@@ -13,9 +14,14 @@ import (
 // pendingInput tracks that the worker is waiting for a text reply in a chat.
 // For example, after clicking "Change Country", we expect the next message
 // to be a country code.
+// pendingInputTimeout is how long a pending input prompt stays valid.
+// If the user doesn't reply within this window, the prompt is discarded.
+const pendingInputTimeout = 5 * time.Minute
+
 type pendingInput struct {
-	action    string // what we're waiting for: "country", "timezone"
-	messageID int    // the config message to edit once the input is received
+	action    string    // what we're waiting for: "country", "notify"
+	messageID int       // the config message to edit once the input is received
+	createdAt time.Time // when the prompt was sent — used to expire stale entries
 }
 
 // Worker reads tasks from a channel, processes them using the Trakt API
@@ -120,6 +126,8 @@ func (w *Worker) process(task Task) {
 		w.handleUpcomingPage(task)
 	case TaskWhoWatches:
 		w.handleWhoWatches(task)
+	case TaskPromptNotifyHours:
+		w.handlePromptNotifyHours(task)
 	default:
 		slog.Warn("unknown task type", "type", task.Type)
 	}
@@ -149,7 +157,11 @@ func (w *Worker) HasPendingInput(chatID int64) bool {
 	// defer ensures Unlock runs when the function returns, even on early returns.
 	// Like Python's "with lock:" or C#'s "lock(mu) { ... }" - guarantees release.
 	defer w.mu.Unlock()
-	_, exists := w.pendingInputs[chatID]
+	input, exists := w.pendingInputs[chatID]
+	if exists && time.Since(input.createdAt) > pendingInputTimeout {
+		delete(w.pendingInputs, chatID)
+		return false
+	}
 	return exists
 }
 
@@ -159,6 +171,7 @@ func (w *Worker) HasPendingInput(chatID int64) bool {
 func (w *Worker) setPendingInput(chatID int64, input pendingInput) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	input.createdAt = time.Now()
 	w.pendingInputs[chatID] = input
 }
 
@@ -170,7 +183,11 @@ func (w *Worker) consumePendingInput(chatID int64) (pendingInput, bool) {
 	defer w.mu.Unlock()
 	input, exists := w.pendingInputs[chatID]
 	if exists {
-		delete(w.pendingInputs, chatID) // built-in function to remove a map entry
+		delete(w.pendingInputs, chatID)
+		// Discard entries older than the timeout — the user took too long to reply
+		if time.Since(input.createdAt) > pendingInputTimeout {
+			return pendingInput{}, false
+		}
 	}
 	return input, exists
 }
