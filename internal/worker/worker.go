@@ -9,7 +9,12 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/tmdb"
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var workerTracer = otel.Tracer("bot.worker")
 
 // pendingInput tracks that the worker is waiting for a text reply in a chat.
 // For example, after clicking "Change Country", we expect the next message
@@ -59,6 +64,9 @@ func New(store storage.Service, traktClient *trakt.Client, tmdbClient *tmdb.Clie
 // Submit sends a task into the worker's input queue.
 // This is safe to call from any goroutine - channels are concurrency-safe by design.
 func (w *Worker) Submit(task Task) {
+	if task.Ctx == nil {
+		task.Ctx = context.Background()
+	}
 	w.tasks <- task
 }
 
@@ -75,8 +83,21 @@ func (w *Worker) Run(ctx context.Context) {
 	for {
 		select {
 		case task := <-w.tasks:
+			if task.Ctx == nil {
+				task.Ctx = context.Background()
+			}
+			taskCtx, span := workerTracer.Start(task.Ctx, taskTypeName(task.Type),
+				// Span attributes let us filter by chat/topic/task in Aspire.
+				// This is one high-level span per queued task, instead of manual spans in each handler.
+				trace.WithAttributes(
+					attribute.Int64("chat.id", task.ChatID),
+					attribute.Int("thread.id", task.ThreadID),
+				),
+			)
+			task.Ctx = taskCtx
 			// A task arrived - dispatch it to the right handler.
 			w.process(task)
+			span.End()
 		case <-ctx.Done():
 			// Shutdown signal received - exit the loop cleanly.
 			slog.Info("worker stopped")
@@ -99,9 +120,9 @@ func (w *Worker) process(task Task) {
 	case TaskMarkWatched:
 		w.handleMarkWatched(task)
 	case TaskCheckWatchHistory:
-		w.handleCheckWatchHistory()
+		w.handleCheckWatchHistory(task)
 	case TaskProcessDeletions:
-		w.handleProcessDeletions()
+		w.handleProcessDeletions(task)
 	case TaskUpcoming:
 		w.handleUpcoming(task)
 	case TaskShows:
@@ -135,13 +156,62 @@ func (w *Worker) process(task Task) {
 	}
 }
 
+func taskTypeName(taskType TaskType) string {
+	switch taskType {
+	case TaskCheckEpisodes:
+		return "worker.check_episodes"
+	case TaskSub:
+		return "worker.sub"
+	case TaskRegisterTopic:
+		return "worker.register_topic"
+	case TaskUnsub:
+		return "worker.unsub"
+	case TaskMarkWatched:
+		return "worker.mark_watched"
+	case TaskCheckWatchHistory:
+		return "worker.check_watch_history"
+	case TaskProcessDeletions:
+		return "worker.process_deletions"
+	case TaskUpcoming:
+		return "worker.upcoming"
+	case TaskShows:
+		return "worker.shows"
+	case TaskShowConfig:
+		return "worker.show_config"
+	case TaskToggleDeleteWatched:
+		return "worker.toggle_delete_watched"
+	case TaskTextInput:
+		return "worker.text_input"
+	case TaskPromptCountry:
+		return "worker.prompt_country"
+	case TaskShowTimezones:
+		return "worker.show_timezones"
+	case TaskSetTimezone:
+		return "worker.set_timezone"
+	case TaskUnseen:
+		return "worker.unseen"
+	case TaskShowsPage:
+		return "worker.shows_page"
+	case TaskUpcomingPage:
+		return "worker.upcoming_page"
+	case TaskWhoWatches:
+		return "worker.who_watches"
+	case TaskPromptNotifyHours:
+		return "worker.prompt_notify_hours"
+	case TaskMarkUnwatched:
+		return "worker.mark_unwatched"
+	default:
+		return "worker.unknown"
+	}
+}
+
 // resolveTargetUser determines which user a command is about.
 // Checks username first, then explicit Telegram ID (from a reply),
 // then falls back to the requester's own ID.
 // Returns (nil, nil) when the user is not found in the database.
-func (w *Worker) resolveTargetUser(target UserTarget) (*storage.User, error) {
+func (w *Worker) resolveTargetUser(ctx context.Context, target UserTarget) (*storage.User, error) {
 	if target.TargetUsername != "" {
-		return w.store.GetUserByUsername(target.TargetUsername)
+		return w.store.GetUserByUsername(ctx, target.TargetUsername)
 	}
 	// Use the explicitly targeted Telegram ID (from a reply), or fall back
 	// to the requester's own ID.
@@ -149,7 +219,7 @@ func (w *Worker) resolveTargetUser(target UserTarget) (*storage.User, error) {
 	if targetID == 0 {
 		targetID = target.RequesterID
 	}
-	return w.store.GetUserByTelegramID(targetID)
+	return w.store.GetUserByTelegramID(ctx, targetID)
 }
 
 // HasPendingInput checks if a chat has a pending text input request.
@@ -193,3 +263,4 @@ func (w *Worker) consumePendingInput(chatID int64) (pendingInput, bool) {
 	}
 	return input, exists
 }
+

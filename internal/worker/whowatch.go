@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,7 +17,7 @@ import (
 func (w *Worker) handleWhoWatches(task Task) {
 	p := task.Payload.(WhoWatchesPayload)
 
-	show, err := w.searchShow(p.Query)
+	show, err := w.searchShow(task.Ctx, p.Query)
 	if err != nil {
 		slog.Error("whowatch: failed to search shows", "query", p.Query, "error", err)
 		return
@@ -26,7 +27,7 @@ func (w *Worker) handleWhoWatches(task Task) {
 		return
 	}
 
-	users, err := w.store.GetUsersByChatID(task.ChatID)
+	users, err := w.store.GetUsersByChatID(task.Ctx, task.ChatID)
 	if err != nil {
 		slog.Error("whowatch: failed to get chat users", "chat_id", task.ChatID, "error", err)
 		return
@@ -36,14 +37,14 @@ func (w *Worker) handleWhoWatches(task Task) {
 		return
 	}
 
-	watchers := w.findWatchers(users, show.IDs.Trakt)
+	watchers := w.findWatchers(task.Ctx, users, show.IDs.Trakt)
 
 	w.results <- task.TextResult(formatWhoWatchesMessage(show.TraktLink(), watchers))
 }
 
 // searchShow queries Trakt for the best match and returns nil if nothing is found.
-func (w *Worker) searchShow(query string) (*trakt.Show, error) {
-	results, err := w.trakt.SearchShows(query)
+func (w *Worker) searchShow(ctx context.Context, query string) (*trakt.Show, error) {
+	results, err := w.trakt.SearchShows(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("searching shows: %w", err)
 	}
@@ -57,7 +58,7 @@ func (w *Worker) searchShow(query string) (*trakt.Show, error) {
 // findWatchers checks which users have a show in their Trakt watched list.
 // Launches one goroutine per user for concurrent fetching, and collects
 // matches into a shared slice protected by a mutex.
-func (w *Worker) findWatchers(users []storage.User, traktShowID int) []*storage.User {
+func (w *Worker) findWatchers(ctx context.Context, users []storage.User, traktShowID int) []*storage.User {
 	watchers := make([]*storage.User, 0, len(users))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -65,10 +66,10 @@ func (w *Worker) findWatchers(users []storage.User, traktShowID int) []*storage.
 	for i := range users {
 		user := &users[i]
 		wg.Add(1)
-		go func() {
+		go func(user *storage.User) {
 			defer wg.Done()
 
-			rep, err := w.trakt.GetWatchedShows(w.tokenFor(user))
+			rep, err := w.trakt.GetWatchedShows(ctx, w.tokenFor(ctx, user))
 			if err != nil {
 				slog.Error("watch history: failed to fetch watched shows", "user_id", user.ID, "error", err)
 				return
@@ -81,7 +82,7 @@ func (w *Worker) findWatchers(users []storage.User, traktShowID int) []*storage.
 				}
 			}
 			mu.Unlock()
-		}()
+		}(user)
 	}
 	wg.Wait()
 	return watchers
@@ -103,3 +104,4 @@ func formatWhoWatchesMessage(showLink string, watchers []*storage.User) string {
 
 	return b.String()
 }
+

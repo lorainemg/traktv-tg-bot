@@ -15,7 +15,7 @@ import (
 func (w *Worker) handleShows(task Task) {
 	target := task.Payload.(UserTarget)
 
-	user, err := w.resolveTargetUser(target)
+	user, err := w.resolveTargetUser(task.Ctx, target)
 	if err != nil {
 		slog.Error("shows: failed to resolve target user", "error", err)
 		return
@@ -29,7 +29,7 @@ func (w *Worker) handleShows(task Task) {
 		return
 	}
 
-	entries, err := w.trakt.GetWatchedShows(w.tokenFor(user))
+	entries, err := w.trakt.GetWatchedShows(task.Ctx, w.tokenFor(task.Ctx, user))
 	if err != nil {
 		slog.Error("shows: failed to fetch watched shows", "user_id", user.ID, "error", err)
 		return
@@ -56,9 +56,9 @@ func (w *Worker) handleShowsPage(task Task) {
 	p := task.Payload.(PagePayload)
 
 	// Answer the callback query to remove Telegram's loading spinner.
-	w.results <- Result{CallbackQueryID: p.CallbackQueryID}
+	w.results <- Result{Ctx: task.Ctx, CallbackQueryID: p.CallbackQueryID}
 
-	user, err := w.store.GetUserByTelegramID(p.TargetTelegramID)
+	user, err := w.store.GetUserByTelegramID(task.Ctx, p.TargetTelegramID)
 	if err != nil || user == nil {
 		slog.Error("shows page: failed to fetch user", "telegram_id", p.TargetTelegramID, "error", err)
 		return
@@ -67,7 +67,7 @@ func (w *Worker) handleShowsPage(task Task) {
 		return
 	}
 
-	entries, err := w.trakt.GetWatchedShows(w.tokenFor(user))
+	entries, err := w.trakt.GetWatchedShows(task.Ctx, w.tokenFor(task.Ctx, user))
 	if err != nil {
 		slog.Error("shows page: failed to fetch watched shows", "user_id", user.ID, "error", err)
 		return
@@ -85,6 +85,7 @@ func (w *Worker) handleShowsPage(task Task) {
 
 	prefix := fmt.Sprintf("shows:%d", user.TelegramID)
 	w.results <- Result{
+		Ctx:           task.Ctx,
 		ChatID:        task.ChatID,
 		ThreadID:      task.ThreadID,
 		Text:          formatShowsMessage(page, p.Page, totalPages, len(shows), user),
@@ -126,3 +127,4 @@ func formatShowsMessage(shows []trakt.Show, page, totalPages, totalShows int, us
 	}
 	return header + strings.Join(lines, "\n")
 }
+

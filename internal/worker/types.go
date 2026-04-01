@@ -1,5 +1,7 @@
 package worker
 
+import "context"
+
 // TaskType identifies what kind of work a task represents.
 // Using a custom type instead of raw int makes the code self-documenting.
 type TaskType int
@@ -31,12 +33,62 @@ const (
 	TaskMarkUnwatched                    // = 20 — reverse of TaskMarkWatched
 )
 
+func (t TaskType) String() string {
+	switch t {
+	case TaskCheckEpisodes:
+		return "check_episodes"
+	case TaskSub:
+		return "sub"
+	case TaskRegisterTopic:
+		return "register_topic"
+	case TaskUnsub:
+		return "unsub"
+	case TaskMarkWatched:
+		return "mark_watched"
+	case TaskCheckWatchHistory:
+		return "check_watch_history"
+	case TaskProcessDeletions:
+		return "process_deletions"
+	case TaskUpcoming:
+		return "upcoming"
+	case TaskShows:
+		return "shows"
+	case TaskShowConfig:
+		return "show_config"
+	case TaskToggleDeleteWatched:
+		return "toggle_delete_watched"
+	case TaskTextInput:
+		return "text_input"
+	case TaskPromptCountry:
+		return "prompt_country"
+	case TaskShowTimezones:
+		return "show_timezones"
+	case TaskSetTimezone:
+		return "set_timezone"
+	case TaskUnseen:
+		return "unseen"
+	case TaskShowsPage:
+		return "shows_page"
+	case TaskUpcomingPage:
+		return "upcoming_page"
+	case TaskWhoWatches:
+		return "who_watches"
+	case TaskPromptNotifyHours:
+		return "prompt_notify_hours"
+	case TaskMarkUnwatched:
+		return "mark_unwatched"
+	default:
+		return "unknown"
+	}
+}
+
 // Task represents a unit of work submitted to the worker queue.
 type Task struct {
 	Type     TaskType
 	ChatID   int64 // where to send Telegram responses
 	ThreadID int   // forum topic thread ID - 0 means General/default topic
 	Payload  any   // extra data, varies by task type (like interface{} - accepts any value)
+	Ctx      context.Context
 }
 
 // TextResult builds a Result pre-filled with the task's ChatID and ThreadID.
@@ -47,6 +99,7 @@ func (t Task) TextResult(text string) Result {
 		ChatID:   t.ChatID,
 		ThreadID: t.ThreadID,
 		Text:     text,
+		Ctx:      t.Ctx,
 	}
 }
 
@@ -66,6 +119,7 @@ type Result struct {
 	Text     string
 	PhotoURL string // if set, message is sent as a photo with Text as caption
 	OnSent   func(messageID int) error
+	Ctx      context.Context
 
 	// EditMessageID, when non-zero, tells the bot to edit an existing message
 	// instead of sending a new one. Zero value (default) means "send new message".
