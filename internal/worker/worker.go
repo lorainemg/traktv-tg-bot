@@ -30,7 +30,7 @@ type Worker struct {
 	tasks   chan Task       // input queue - other packages send tasks here
 	results chan Result     // output queue - worker sends messages to deliver here
 	store   storage.Service // database operations (the interface, not the concrete type)
-	trakt   *trakt.Client   // Trakt API client
+	trakt   trakt.Service   // Trakt API operations (interface — concrete *Client or a test mock)
 	tmdb    *tmdb.Client    // TMDB API client - used for watch provider lookups
 
 	// pendingInputs tracks chats where the worker expects text input.
@@ -45,7 +45,7 @@ type Worker struct {
 // New creates a Worker with buffered channels of the given size.
 // bufferSize controls how many tasks/results can queue up before
 // the sender blocks - like queue.Queue(maxsize=N) in Python.
-func New(store storage.Service, traktClient *trakt.Client, tmdbClient *tmdb.Client, bufferSize int) *Worker {
+func New(store storage.Service, traktClient trakt.Service, tmdbClient *tmdb.Client, bufferSize int) *Worker {
 	return &Worker{
 		tasks:         make(chan Task, bufferSize),
 		results:       make(chan Result, bufferSize),
