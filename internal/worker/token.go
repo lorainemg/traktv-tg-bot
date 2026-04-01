@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -20,9 +21,9 @@ const tokenRefreshBuffer = 24 * time.Hour
 // This is a closure: the returned function "captures" the user pointer,
 // so when the Trakt client calls it later, it still has access to the
 // user's token fields. Like a lambda capturing variables in C# or Python.
-func (w *Worker) tokenFor(user *storage.User) trakt.TokenSource {
+func (w *Worker) tokenFor(ctx context.Context, user *storage.User) trakt.TokenSource {
 	return func() (string, error) {
-		if err := w.ensureFreshToken(user); err != nil {
+		if err := w.ensureFreshToken(ctx, user); err != nil {
 			return "", err
 		}
 		return user.TraktAccessToken, nil
@@ -34,7 +35,7 @@ func (w *Worker) tokenFor(user *storage.User) trakt.TokenSource {
 // changes to the token fields are visible to the caller — like passing an
 // object by reference in C# or mutating a dict in Python.
 // Returns an error if the refresh fails — the caller should skip this user.
-func (w *Worker) ensureFreshToken(user *storage.User) error {
+func (w *Worker) ensureFreshToken(ctx context.Context, user *storage.User) error {
 	// Token is still fresh — no refresh needed
 	if !user.TraktTokenExpiresAt.IsZero() && time.Now().Before(user.TraktTokenExpiresAt.Add(-tokenRefreshBuffer)) {
 		return nil
@@ -42,14 +43,14 @@ func (w *Worker) ensureFreshToken(user *storage.User) error {
 
 	slog.Info("refreshing trakt token", "user_id", user.ID, "telegram_id", user.TelegramID)
 
-	token, err := w.trakt.RefreshToken(user.TraktRefreshToken)
+	token, err := w.trakt.RefreshToken(ctx, user.TraktRefreshToken)
 	if err != nil {
 		return fmt.Errorf("refreshing token for user %d: %w", user.TelegramID, err)
 	}
 
 	expiresAt := time.Unix(int64(token.CreatedAt+token.ExpiresIn), 0)
 
-	if err := w.store.UpdateUserTokens(user.TelegramID, token.AccessToken, token.RefreshToken, expiresAt); err != nil {
+	if err := w.store.UpdateUserTokens(ctx, user.TelegramID, token.AccessToken, token.RefreshToken, expiresAt); err != nil {
 		return fmt.Errorf("saving refreshed token for user %d: %w", user.TelegramID, err)
 	}
 

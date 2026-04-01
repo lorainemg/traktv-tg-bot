@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+
 	// models provides Telegram API types like ParseMode, Update, etc.
 	"github.com/loraine/traktv-tg-bot/internal/worker"
 )
@@ -21,6 +22,13 @@ type Bot struct {
 	worker *worker.Worker
 }
 
+func (b *Bot) submit(ctx context.Context, task worker.Task) {
+	taskCtx, span := startSubmitSpan(ctx, task)
+	task.Ctx = taskCtx
+	b.worker.Submit(task)
+	span.End()
+}
+
 // NewBot creates and configures a Telegram bot with command handlers.
 func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	b := &Bot{
@@ -28,6 +36,8 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	}
 
 	opts := []bot.Option{
+		withInstrumentedHTTPClientOption(),
+		bot.WithMiddlewares(traceUpdateMiddleware()),
 		bot.WithDefaultHandler(b.handleDefault),
 		// By default, Telegram only sends message updates. We need to explicitly
 		// request callback_query updates so the bot receives inline button clicks.
@@ -67,6 +77,10 @@ func (b *Bot) Start(ctx context.Context) {
 // SendResultsMessage dispatches a Result to the appropriate Telegram action.
 // Priority: CallbackQuery > Delete > Edit > Send new.
 func (b *Bot) SendResultsMessage(result worker.Result) {
+	ctx, span := startSendResultSpan(result)
+	defer span.End()
+	result.Ctx = ctx
+
 	switch {
 	case result.CallbackQueryID != "":
 		b.answerCallbackResult(result)
@@ -81,7 +95,7 @@ func (b *Bot) SendResultsMessage(result worker.Result) {
 
 // answerCallbackResult answers a callback query with a toast or popup.
 func (b *Bot) answerCallbackResult(result worker.Result) {
-	_, err := b.bot.AnswerCallbackQuery(context.Background(), &bot.AnswerCallbackQueryParams{
+	_, err := b.bot.AnswerCallbackQuery(resultCtx(result), &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: result.CallbackQueryID,
 		Text:            result.Text,
 		ShowAlert:       result.CallbackShowAlert,
@@ -94,7 +108,7 @@ func (b *Bot) answerCallbackResult(result worker.Result) {
 // deleteResultsMessage deletes a Telegram message - used to clean up
 // notifications after everyone has watched.
 func (b *Bot) deleteResultsMessage(result worker.Result) {
-	_, err := b.bot.DeleteMessage(context.Background(), &bot.DeleteMessageParams{
+	_, err := b.bot.DeleteMessage(resultCtx(result), &bot.DeleteMessageParams{
 		ChatID:    result.ChatID,
 		MessageID: result.DeleteMessageID,
 	})
@@ -138,7 +152,7 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 	} else if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
 		params.ReplyMarkup = kb
 	}
-	msg, err := b.bot.SendMessage(context.Background(), params)
+	msg, err := b.bot.SendMessage(resultCtx(result), params)
 	if err != nil {
 		slog.Error("failed to send message", "error", err, "chat_id", result.ChatID)
 		return
@@ -181,7 +195,7 @@ func (b *Bot) editResultsMessage(result worker.Result) {
 	if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
 		editParams.ReplyMarkup = kb
 	}
-	_, err := b.bot.EditMessageText(context.Background(), editParams)
+	_, err := b.bot.EditMessageText(resultCtx(result), editParams)
 	if err != nil {
 		// Telegram rejects edits when the content hasn't changed - this is expected
 		// when a user clicks the button but was already marked as watched.
@@ -199,6 +213,9 @@ func (b *Bot) StartResultsForwarder(ctx context.Context) {
 		for {
 			select {
 			case result := <-b.worker.Results():
+				if result.Ctx == nil {
+					result.Ctx = ctx
+				}
 				b.SendResultsMessage(result)
 			case <-ctx.Done():
 				return
@@ -258,7 +275,7 @@ func (b *Bot) handleStart(ctx context.Context, tgBot *bot.Bot, update *models.Up
 // handleSub submits a subscribe task to the worker. For new users this starts
 // the Trakt OAuth device flow; for existing users it re-subscribes (unmutes).
 func (b *Bot) handleSub(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskSub,
 		ChatID:   update.Message.Chat.ID,
 		ThreadID: update.Message.MessageThreadID,
@@ -300,7 +317,7 @@ func (b *Bot) handleRegisterTopic(ctx context.Context, tgBot *bot.Bot, update *m
 		return
 	}
 
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskRegisterTopic,
 		ChatID:   msg.Chat.ID,
 		ThreadID: msg.MessageThreadID,
@@ -334,7 +351,7 @@ func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models
 		}
 	}
 
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskUpcoming,
 		ChatID:   update.Message.Chat.ID,
 		ThreadID: update.Message.MessageThreadID,
@@ -345,7 +362,7 @@ func (b *Bot) handleUpcoming(ctx context.Context, tgBot *bot.Bot, update *models
 // handleShows submits a task to list all followed shows in this chat.
 func (b *Bot) handleShows(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	msg := update.Message
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskShows,
 		ChatID:   msg.Chat.ID,
 		ThreadID: msg.MessageThreadID,
@@ -355,7 +372,7 @@ func (b *Bot) handleShows(ctx context.Context, tgBot *bot.Bot, update *models.Up
 
 // handleUnsub submits a task to pause episode notifications for the calling user.
 func (b *Bot) handleUnsub(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskUnsub,
 		ChatID:   update.Message.Chat.ID,
 		ThreadID: update.Message.MessageThreadID,
@@ -367,7 +384,7 @@ func (b *Bot) handleUnsub(ctx context.Context, tgBot *bot.Bot, update *models.Up
 }
 
 // handleConfigCallback routes config inline button clicks to the appropriate task.
-func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
+func (b *Bot) handleConfigCallback(ctx context.Context, cq *models.CallbackQuery) {
 	action := strings.TrimPrefix(cq.Data, "config:")
 	threadID := cq.Message.Message.MessageThreadID
 	payload := worker.ConfigCallbackPayload{
@@ -379,28 +396,28 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 
 	switch {
 	case action == "delete":
-		b.worker.Submit(worker.Task{
+		b.submit(ctx, worker.Task{
 			Type:     worker.TaskToggleDeleteWatched,
 			ChatID:   payload.ChatID,
 			ThreadID: threadID,
 			Payload:  payload,
 		})
 	case action == "country":
-		b.worker.Submit(worker.Task{
+		b.submit(ctx, worker.Task{
 			Type:     worker.TaskPromptCountry,
 			ChatID:   payload.ChatID,
 			ThreadID: threadID,
 			Payload:  payload,
 		})
 	case action == "notify":
-		b.worker.Submit(worker.Task{
+		b.submit(ctx, worker.Task{
 			Type:     worker.TaskPromptNotifyHours,
 			ChatID:   payload.ChatID,
 			ThreadID: threadID,
 			Payload:  payload,
 		})
 	case action == "timezone":
-		b.worker.Submit(worker.Task{
+		b.submit(ctx, worker.Task{
 			Type:     worker.TaskShowTimezones,
 			ChatID:   payload.ChatID,
 			ThreadID: threadID,
@@ -409,7 +426,7 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 	case strings.HasPrefix(action, "tz:"):
 		// User picked a specific timezone from the button list.
 		// Callback data format: "config:tz:America/New_York"
-		b.worker.Submit(worker.Task{
+		b.submit(ctx, worker.Task{
 			Type:     worker.TaskSetTimezone,
 			ChatID:   cq.Message.Message.Chat.ID,
 			ThreadID: threadID,
@@ -430,7 +447,7 @@ func (b *Bot) handleConfigCallback(cq *models.CallbackQuery) {
 //   - reply to a message with /unseen — unseen episodes for that user
 func (b *Bot) handleUnseen(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
 	msg := update.Message
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskUnseen,
 		ChatID:   msg.Chat.ID,
 		ThreadID: msg.MessageThreadID,
@@ -455,7 +472,7 @@ func (b *Bot) handleWhoWatch(ctx context.Context, tgBot *bot.Bot, update *models
 		return
 	}
 
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskWhoWatches,
 		ChatID:   msg.Chat.ID,
 		ThreadID: msg.MessageThreadID,
@@ -489,7 +506,7 @@ func parseUserTarget(msg *models.Message) worker.UserTarget {
 
 // handleConfig submits a task to display the current chat settings.
 func (b *Bot) handleConfig(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     worker.TaskShowConfig,
 		ChatID:   update.Message.Chat.ID,
 		ThreadID: update.Message.MessageThreadID,
@@ -533,7 +550,7 @@ func (b *Bot) handleDefault(ctx context.Context, tgBot *bot.Bot, update *models.
 	if update.Message != nil && update.Message.Text != "" && update.Message.ReplyToMessage != nil {
 		chatID := update.Message.Chat.ID
 		if b.worker.HasPendingInput(chatID) {
-			b.worker.Submit(worker.Task{
+			b.submit(ctx, worker.Task{
 				Type:     worker.TaskTextInput,
 				ChatID:   chatID,
 				ThreadID: update.Message.MessageThreadID,
@@ -559,29 +576,29 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 	}
 
 	if strings.HasPrefix(cq.Data, "config:") {
-		b.handleConfigCallback(cq)
+		b.handleConfigCallback(ctx, cq)
 		return
 	}
 
 	if strings.HasPrefix(cq.Data, "watched:") || strings.HasPrefix(cq.Data, "unwatched:") {
-		b.handleWatchCallback(cq)
+		b.handleWatchCallback(ctx, cq)
 		return
 	}
 
 	// Pagination callbacks: "shows:<page>" or "upcoming:<days>:<page>"
 	if strings.HasPrefix(cq.Data, "shows:") {
-		b.handlePaginationCallback(cq, worker.TaskShowsPage)
+		b.handlePaginationCallback(ctx, cq, worker.TaskShowsPage)
 		return
 	}
 	if strings.HasPrefix(cq.Data, "upcoming:") {
-		b.handlePaginationCallback(cq, worker.TaskUpcomingPage)
+		b.handlePaginationCallback(ctx, cq, worker.TaskUpcomingPage)
 		return
 	}
 }
 
 // handleWatchCallback parses "watched:<id>" and "unwatched:<id>" callbacks
 // and submits the appropriate task. Both share the same payload structure.
-func (b *Bot) handleWatchCallback(cq *models.CallbackQuery) {
+func (b *Bot) handleWatchCallback(ctx context.Context, cq *models.CallbackQuery) {
 	// Determine direction by checking the prefix, then trim it to get the ID.
 	taskType := worker.TaskMarkWatched
 	idStr := strings.TrimPrefix(cq.Data, "watched:")
@@ -595,7 +612,7 @@ func (b *Bot) handleWatchCallback(cq *models.CallbackQuery) {
 		return
 	}
 
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     taskType,
 		ChatID:   cq.Message.Message.Chat.ID,
 		ThreadID: cq.Message.Message.MessageThreadID,
@@ -612,7 +629,7 @@ func (b *Bot) handleWatchCallback(cq *models.CallbackQuery) {
 // appropriate page task. Callback data formats:
 //   - "shows:<telegramID>:<page>"  → TaskShowsPage
 //   - "upcoming:<days>:<page>"     → TaskUpcomingPage
-func (b *Bot) handlePaginationCallback(cq *models.CallbackQuery, taskType worker.TaskType) {
+func (b *Bot) handlePaginationCallback(ctx context.Context, cq *models.CallbackQuery, taskType worker.TaskType) {
 	// Split callback data into parts: ["shows", "123", "1"] or ["upcoming", "7", "2"]
 	parts := strings.Split(cq.Data, ":")
 
@@ -656,7 +673,7 @@ func (b *Bot) handlePaginationCallback(cq *models.CallbackQuery, taskType worker
 		payload.Page = page
 	}
 
-	b.worker.Submit(worker.Task{
+	b.submit(ctx, worker.Task{
 		Type:     taskType,
 		ChatID:   cq.Message.Message.Chat.ID,
 		ThreadID: cq.Message.Message.MessageThreadID,

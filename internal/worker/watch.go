@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -29,7 +30,7 @@ func (w *Worker) validateWatchAction(task Task, taskName string) *watchActionCon
 		return nil
 	}
 
-	notification, err := w.store.GetNotificationByID(payload.NotificationID)
+	notification, err := w.store.GetNotificationByID(task.Ctx, payload.NotificationID)
 	if err != nil {
 		slog.Error("failed to look up notification", "error", err, "notification_id", payload.NotificationID)
 		return nil
@@ -42,22 +43,22 @@ func (w *Worker) validateWatchAction(task Task, taskName string) *watchActionCon
 	// and compare against the current UTC time.
 	airTime, err := time.Parse(time.RFC3339, notification.FirstAired)
 	if err == nil && airTime.After(time.Now()) {
-		w.answerCallback(payload.CallbackQueryID, "This episode hasn't aired yet.", true)
+		w.answerCallback(task.Ctx, payload.CallbackQueryID, "This episode hasn't aired yet.", true)
 		return nil
 	}
 
-	user := w.resolveWatchUser(payload)
+	user := w.resolveWatchUser(task.Ctx, payload)
 	if user == nil {
 		return nil
 	}
 
-	watchStatus, err := w.store.GetUserWatchStatus(notification.ID, user.ID)
+	watchStatus, err := w.store.GetUserWatchStatus(task.Ctx, notification.ID, user.ID)
 	if err != nil {
 		slog.Error("failed to look up watch status", "error", err)
 		return nil
 	}
 	if watchStatus.ID == 0 {
-		w.answerCallback(payload.CallbackQueryID, "You're not following this show.", true)
+		w.answerCallback(task.Ctx, payload.CallbackQueryID, "You're not following this show.", true)
 		return nil
 	}
 
@@ -84,9 +85,9 @@ type watchActionParams struct {
 	// syncTrakt is the function that calls the Trakt API (mark or unmark).
 	// In Go, functions are first-class values — you can store them in struct
 	// fields and pass them around, just like in Python or JavaScript.
-	syncTrakt func(user *storage.User, notification *storage.Notification) error
+	syncTrakt func(ctx context.Context, user *storage.User, notification *storage.Notification) error
 	// syncDB is the function that updates the local database (mark or unmark).
-	syncDB func(notificationID uint, userID uint) error
+	syncDB func(ctx context.Context, notificationID uint, userID uint) error
 }
 
 // executeWatchAction is the shared implementation for both watched and unwatched.
@@ -99,24 +100,24 @@ func (w *Worker) executeWatchAction(task Task, taskName string, params watchActi
 	}
 
 	if ctx.watchStatus.Watched != params.expectWatched {
-		w.answerCallback(ctx.payload.CallbackQueryID, params.alreadyMsg, true)
+		w.answerCallback(task.Ctx, ctx.payload.CallbackQueryID, params.alreadyMsg, true)
 		return
 	}
 
-	if err := params.syncTrakt(ctx.user, ctx.notification); err != nil {
+	if err := params.syncTrakt(task.Ctx, ctx.user, ctx.notification); err != nil {
 		slog.Error("trakt sync failed", "action", taskName, "error", err)
-		w.answerCallback(ctx.payload.CallbackQueryID, params.failMsg, true)
+		w.answerCallback(task.Ctx, ctx.payload.CallbackQueryID, params.failMsg, true)
 		return
 	}
 
-	if err := params.syncDB(ctx.notification.ID, ctx.user.ID); err != nil {
+	if err := params.syncDB(task.Ctx, ctx.notification.ID, ctx.user.ID); err != nil {
 		slog.Error("db sync failed", "action", taskName, "error", err)
-		w.answerCallback(ctx.payload.CallbackQueryID, params.failMsg, true)
+		w.answerCallback(task.Ctx, ctx.payload.CallbackQueryID, params.failMsg, true)
 		return
 	}
 
-	w.answerCallback(ctx.payload.CallbackQueryID, params.successMsg, false)
-	w.refreshNotificationMessage(ctx.notification, ctx.payload.ChatID)
+	w.answerCallback(task.Ctx, ctx.payload.CallbackQueryID, params.successMsg, false)
+	w.refreshNotificationMessage(task.Ctx, ctx.notification, ctx.payload.ChatID)
 }
 
 // handleMarkWatched marks an episode as watched on Trakt and in the DB.
@@ -144,9 +145,10 @@ func (w *Worker) handleMarkUnwatched(task Task) {
 }
 
 // syncTraktWatched wraps the Trakt client call to match the syncTrakt signature.
-func (w *Worker) syncTraktWatched(user *storage.User, notification *storage.Notification) error {
+func (w *Worker) syncTraktWatched(ctx context.Context, user *storage.User, notification *storage.Notification) error {
 	return w.trakt.MarkEpisodeWatched(
-		w.tokenFor(user),
+		ctx,
+		w.tokenFor(ctx, user),
 		notification.TraktShowID,
 		notification.Season,
 		notification.EpisodeNumber,
@@ -154,9 +156,10 @@ func (w *Worker) syncTraktWatched(user *storage.User, notification *storage.Noti
 }
 
 // syncTraktUnwatched wraps the Trakt client call to match the syncTrakt signature.
-func (w *Worker) syncTraktUnwatched(user *storage.User, notification *storage.Notification) error {
+func (w *Worker) syncTraktUnwatched(ctx context.Context, user *storage.User, notification *storage.Notification) error {
 	return w.trakt.UnmarkEpisodeWatched(
-		w.tokenFor(user),
+		ctx,
+		w.tokenFor(ctx, user),
 		notification.TraktShowID,
 		notification.Season,
 		notification.EpisodeNumber,
@@ -167,14 +170,14 @@ func (w *Worker) syncTraktUnwatched(user *storage.User, notification *storage.No
 
 // resolveWatchUser looks up the reacting user and validates they have a Trakt account.
 // Sends an auth prompt if the user hasn't linked their account yet.
-func (w *Worker) resolveWatchUser(payload WatchActionPayload) *storage.User {
-	user, err := w.store.GetUserByTelegramID(payload.TelegramID)
+func (w *Worker) resolveWatchUser(ctx context.Context, payload WatchActionPayload) *storage.User {
+	user, err := w.store.GetUserByTelegramID(ctx, payload.TelegramID)
 	if err != nil {
 		slog.Error("failed to look up user", "error", err)
 		return nil
 	}
 	if user == nil {
-		w.answerCallback(payload.CallbackQueryID, "You need to link your Trakt account first. Use /sub.", true)
+		w.answerCallback(ctx, payload.CallbackQueryID, "You need to link your Trakt account first. Use /sub.", true)
 		return nil
 	}
 	return user
@@ -184,14 +187,14 @@ func (w *Worker) resolveWatchUser(payload WatchActionPayload) *storage.User {
 // "Watched by" line and edits the Telegram message. Call this after the DB
 // watch status has already been updated (by MarkWatchStatus or UnmarkWatchStatus).
 // Respects per-chat config for timezone formatting and deletion behavior.
-func (w *Worker) refreshNotificationMessage(notification *storage.Notification, chatID int64) {
-	settings, err := w.loadChatSettings(chatID)
+func (w *Worker) refreshNotificationMessage(ctx context.Context, notification *storage.Notification, chatID int64) {
+	settings, err := w.loadChatSettings(ctx, chatID)
 	if err != nil {
 		slog.Error("failed to load chat settings", "error", err, "chat_id", chatID)
 		return
 	}
 
-	statuses, err := w.store.GetWatchStatuses(notification.ID)
+	statuses, err := w.store.GetWatchStatuses(ctx, notification.ID)
 	if err != nil {
 		slog.Error("failed to fetch watch statuses", "error", err)
 		return
@@ -211,6 +214,7 @@ func (w *Worker) refreshNotificationMessage(notification *storage.Notification, 
 	}
 
 	w.results <- Result{
+		Ctx:           ctx,
 		ChatID:        chatID,
 		Text:          msg,
 		PhotoURL:      notification.PhotoURL,
@@ -220,14 +224,15 @@ func (w *Worker) refreshNotificationMessage(notification *storage.Notification, 
 
 	// Only schedule deletion if the chat has deleteWatched enabled
 	if haveAllWatched && settings.deleteWatched {
-		w.scheduleDeletion(notification, chatID)
+		w.scheduleDeletion(ctx, notification, chatID)
 	}
 }
 
 // answerCallback sends a Result that tells the bot to answer a callback query
 // with a toast (showAlert=false) or a modal popup (showAlert=true).
-func (w *Worker) answerCallback(callbackQueryID, text string, showAlert bool) {
+func (w *Worker) answerCallback(ctx context.Context, callbackQueryID, text string, showAlert bool) {
 	w.results <- Result{
+		Ctx:               ctx,
 		CallbackQueryID:   callbackQueryID,
 		Text:              text,
 		CallbackShowAlert: showAlert,
@@ -236,8 +241,8 @@ func (w *Worker) answerCallback(callbackQueryID, text string, showAlert bool) {
 
 // scheduleDeletion creates a DB record to delete the notification message later.
 // The deletion checker ticker will pick it up after the delay has passed.
-func (w *Worker) scheduleDeletion(notification *storage.Notification, chatID int64) {
-	err := w.store.CreateScheduledDeletion(&storage.ScheduledDeletion{
+func (w *Worker) scheduleDeletion(ctx context.Context, notification *storage.Notification, chatID int64) {
+	err := w.store.CreateScheduledDeletion(ctx, &storage.ScheduledDeletion{
 		NotificationID: notification.ID,
 		ChatID:         chatID,
 		MessageID:      notification.TelegramMessageID,

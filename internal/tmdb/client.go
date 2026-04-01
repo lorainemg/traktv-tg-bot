@@ -1,11 +1,14 @@
 package tmdb
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const baseURL = "https://api.themoviedb.org/3"
@@ -22,7 +25,7 @@ func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:     apiKey,
 		baseURL:    baseURL,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 }
 
@@ -36,9 +39,9 @@ func closeBody(body io.ReadCloser) {
 // GetWatchProviders fetches streaming providers for a TV show in a given country.
 // tmdbID is the show's TMDB numeric ID, countryCode is e.g. "US", "GB".
 // Returns nil (not an error) if no providers are found for that country.
-func (c *Client) GetWatchProviders(tmdbID int, countryCode string) (*WatchInfo, error) {
+func (c *Client) GetWatchProviders(ctx context.Context, tmdbID int, countryCode string) (*WatchInfo, error) {
 	url := fmt.Sprintf("%s/tv/%d/watch/providers?api_key=%s", c.baseURL, tmdbID, c.apiKey)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
