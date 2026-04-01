@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -31,7 +32,7 @@ func (w *Worker) handleUpcoming(task Task) {
 		days = 7
 	}
 
-	users, err := w.store.GetUsersByChatID(chatID)
+	users, err := w.store.GetUsersByChatID(task.Ctx, chatID)
 	if err != nil {
 		slog.Error("upcoming: failed to fetch users", "chat_id", chatID, "error", err)
 		return
@@ -41,14 +42,14 @@ func (w *Worker) handleUpcoming(task Task) {
 		return
 	}
 
-	settings, err := w.loadChatSettings(chatID)
+	settings, err := w.loadChatSettings(task.Ctx, chatID)
 	if err != nil {
 		slog.Error("upcoming: failed to load chat settings", "chat_id", chatID, "error", err)
 		return
 	}
 
 	today := time.Now().Format("2006-01-02")
-	episodes := w.collectUpcomingEpisodes(users, today, days)
+	episodes := w.collectUpcomingEpisodes(task.Ctx, users, today, days)
 
 	if len(episodes) == 0 {
 		w.results <- task.TextResult(fmt.Sprintf("No upcoming episodes in the next %d days.", days))
@@ -69,9 +70,9 @@ func (w *Worker) handleUpcoming(task Task) {
 func (w *Worker) handleUpcomingPage(task Task) {
 	p := task.Payload.(PagePayload)
 
-	w.results <- Result{CallbackQueryID: p.CallbackQueryID}
+	w.answerCallback(task.Ctx, p.CallbackQueryID, "", false)
 
-	users, err := w.store.GetUsersByChatID(task.ChatID)
+	users, err := w.store.GetUsersByChatID(task.Ctx, task.ChatID)
 	if err != nil {
 		slog.Error("upcoming page: failed to fetch users", "chat_id", task.ChatID, "error", err)
 		return
@@ -80,14 +81,14 @@ func (w *Worker) handleUpcomingPage(task Task) {
 		return
 	}
 
-	settings, err := w.loadChatSettings(task.ChatID)
+	settings, err := w.loadChatSettings(task.Ctx, task.ChatID)
 	if err != nil {
 		slog.Error("upcoming page: failed to load chat settings", "chat_id", task.ChatID, "error", err)
 		return
 	}
 
 	today := time.Now().Format("2006-01-02")
-	episodes := w.collectUpcomingEpisodes(users, today, p.Days)
+	episodes := w.collectUpcomingEpisodes(task.Ctx, users, today, p.Days)
 	if len(episodes) == 0 {
 		return
 	}
@@ -98,6 +99,7 @@ func (w *Worker) handleUpcomingPage(task Task) {
 	}
 
 	w.results <- Result{
+		Ctx:           task.Ctx,
 		ChatID:        task.ChatID,
 		ThreadID:      task.ThreadID,
 		Text:          formatUpcomingMessage(page, settings.location, p.Days, p.Page, totalPages, len(episodes)),
@@ -108,22 +110,22 @@ func (w *Worker) handleUpcomingPage(task Task) {
 
 // collectUpcomingEpisodes fetches calendars from all users and merges them,
 // tracking which users follow each episode's show.
-func (w *Worker) collectUpcomingEpisodes(users []storage.User, today string, days int) []upcomingEpisode {
+func (w *Worker) collectUpcomingEpisodes(ctx context.Context, users []storage.User, today string, days int) []upcomingEpisode {
 	// Map from episode key → upcomingEpisode (entry + list of users)
 	episodeMap := make(map[string]*upcomingEpisode)
 
 	for i := range users {
 		user := &users[i]
 
-		token := w.tokenFor(user)
+		token := w.tokenFor(ctx, user)
 
-		watchlistShows, err := w.trakt.GetWatchlistShows(token)
+		watchlistShows, err := w.trakt.GetWatchlistShows(ctx, token)
 		if err != nil {
 			slog.Error("upcoming: failed to fetch watchlist", "user_id", user.ID, "error", err)
 			watchlistShows = nil
 		}
 
-		entries, err := w.trakt.GetCalendar(token, today, days)
+		entries, err := w.trakt.GetCalendar(ctx, token, today, days)
 		if err != nil {
 			slog.Error("upcoming: failed to fetch calendar", "user_id", user.ID, "error", err)
 			continue

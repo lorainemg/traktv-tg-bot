@@ -2,6 +2,7 @@ package trakt
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -39,7 +42,9 @@ func NewClient(clientID, clientSecret string) *Client {
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		baseURL:      defaultBaseURL,
-		httpClient:   &http.Client{},
+		httpClient: &http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 	}
 }
 
@@ -52,13 +57,13 @@ func closeBody(body io.ReadCloser) {
 
 // newRequest builds an *http.Request with Trakt-required headers.
 // accessToken can be "" for unauthenticated endpoints (like OAuth).
-func (c *Client) newRequest(method, path, accessToken string, jsonBody []byte) (*http.Request, error) {
+func (c *Client) newRequest(ctx context.Context, method, path, accessToken string, jsonBody []byte) (*http.Request, error) {
 	var bodyReader io.Reader
 	if jsonBody != nil {
 		bodyReader = bytes.NewBuffer(jsonBody)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("creating trakt request: %w", err)
 	}
@@ -74,7 +79,7 @@ func (c *Client) newRequest(method, path, accessToken string, jsonBody []byte) (
 // do executes an HTTP request with automatic retry on 429 (rate limited).
 // If body is non-nil, it gets marshalled to JSON automatically.
 // token can be nil for unauthenticated endpoints (search, OAuth).
-func (c *Client) do(method, path string, token TokenSource, body any) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, method, path string, token TokenSource, body any) (*http.Response, error) {
 	// Resolve the access token once, before any retries.
 	// If token is nil this is an unauthenticated request — accessToken stays "".
 	var accessToken string
@@ -97,7 +102,7 @@ func (c *Client) do(method, path string, token TokenSource, body any) (*http.Res
 	}
 
 	for attempt := range maxRetries {
-		req, err := c.newRequest(method, path, accessToken, jsonBody)
+		req, err := c.newRequest(ctx, method, path, accessToken, jsonBody)
 		if err != nil {
 			return nil, err
 		}
@@ -131,10 +136,10 @@ func (c *Client) do(method, path string, token TokenSource, body any) (*http.Res
 
 // GetCalendar fetches upcoming episodes for the user's followed shows.
 // Uses: GET /calendars/my/shows/:start_date/:days
-func (c *Client) GetCalendar(token TokenSource, startDate string, days int) ([]CalendarEntry, error) {
+func (c *Client) GetCalendar(ctx context.Context, token TokenSource, startDate string, days int) ([]CalendarEntry, error) {
 	path := fmt.Sprintf("/calendars/my/shows/%s/%d?extended=full", startDate, days)
 
-	resp, err := c.do(http.MethodGet, path, token, nil)
+	resp, err := c.do(ctx, http.MethodGet, path, token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching calendar: %w", err)
 	}
@@ -155,8 +160,8 @@ func (c *Client) GetCalendar(token TokenSource, startDate string, days int) ([]C
 // GetWatchlistShows fetches the user's show watchlist and returns a set of
 // Trakt show IDs. This is used to exclude watchlisted (but not watched)
 // shows from episode notifications.
-func (c *Client) GetWatchlistShows(token TokenSource) (map[int]bool, error) {
-	resp, err := c.do(http.MethodGet, "/users/me/watchlist/shows", token, nil)
+func (c *Client) GetWatchlistShows(ctx context.Context, token TokenSource) (map[int]bool, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/users/me/watchlist/shows", token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching watchlist: %w", err)
 	}
@@ -183,8 +188,8 @@ func (c *Client) GetWatchlistShows(token TokenSource) (map[int]bool, error) {
 // GetWatchedShows fetches shows the user has actually started watching
 // (at least one episode watched). Returns full show details plus play counts.
 // Uses: GET /users/me/watched/shows
-func (c *Client) GetWatchedShows(token TokenSource) ([]WatchedShowEntry, error) {
-	resp, err := c.do(http.MethodGet, "/users/me/watched/shows?extended=full", token, nil)
+func (c *Client) GetWatchedShows(ctx context.Context, token TokenSource) ([]WatchedShowEntry, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/users/me/watched/shows?extended=full", token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching watched shows: %w", err)
 	}
@@ -206,10 +211,10 @@ func (c *Client) GetWatchedShows(token TokenSource) ([]WatchedShowEntry, error) 
 // startAt limits results to watches after this ISO 8601 timestamp, so we only
 // get recent activity instead of the user's entire history.
 // Uses: GET /users/me/history/episodes?start_at=...
-func (c *Client) GetWatchHistory(token TokenSource, startAt string) ([]HistoryEntry, error) {
+func (c *Client) GetWatchHistory(ctx context.Context, token TokenSource, startAt string) ([]HistoryEntry, error) {
 	path := fmt.Sprintf("/users/me/history/episodes?start_at=%s", startAt)
 
-	resp, err := c.do(http.MethodGet, path, token, nil)
+	resp, err := c.do(ctx, http.MethodGet, path, token, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching watch history: %w", err)
 	}
@@ -229,8 +234,8 @@ func (c *Client) GetWatchHistory(token TokenSource, startAt string) ([]HistoryEn
 
 // RequestDeviceCode starts the device auth flow.
 // Returns a DeviceCode containing the user_code the user must enter at the verification URL.
-func (c *Client) RequestDeviceCode() (*DeviceCode, error) {
-	resp, err := c.do(http.MethodPost, "/oauth/device/code", nil, struct {
+func (c *Client) RequestDeviceCode(ctx context.Context) (*DeviceCode, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/oauth/device/code", nil, struct {
 		ClientID string `json:"client_id"`
 	}{ClientID: c.clientID})
 	if err != nil {
@@ -252,8 +257,8 @@ func (c *Client) RequestDeviceCode() (*DeviceCode, error) {
 
 // PollForToken exchanges a device_code for OAuth tokens.
 // Returns (nil, nil) if the user hasn't authorized yet (keep polling).
-func (c *Client) PollForToken(deviceCode string) (*Token, error) {
-	resp, err := c.do(http.MethodPost, "/oauth/device/token", nil, struct {
+func (c *Client) PollForToken(ctx context.Context, deviceCode string) (*Token, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/oauth/device/token", nil, struct {
 		DeviceCode   string `json:"code"`
 		ClientID     string `json:"client_id"`
 		ClientSecret string `json:"client_secret"`
@@ -284,8 +289,8 @@ func (c *Client) PollForToken(deviceCode string) (*Token, error) {
 // Uses: POST /oauth/token with grant_type "refresh_token".
 // After a successful refresh, the OLD refresh token is invalidated — callers
 // must save both the new AccessToken and new RefreshToken.
-func (c *Client) RefreshToken(refreshToken string) (*Token, error) {
-	resp, err := c.do(http.MethodPost, "/oauth/token", nil, struct {
+func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*Token, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/oauth/token", nil, struct {
 		RefreshToken string `json:"refresh_token"`
 		ClientID     string `json:"client_id"`
 		ClientSecret string `json:"client_secret"`
@@ -317,12 +322,12 @@ func (c *Client) RefreshToken(refreshToken string) (*Token, error) {
 // SearchShows queries Trakt's search API for shows matching the given text.
 // No access token is needed - the search endpoint is public.
 // Uses: GET /search/show?query=...&extended=full
-func (c *Client) SearchShows(query string) ([]SearchResult, error) {
+func (c *Client) SearchShows(ctx context.Context, query string) ([]SearchResult, error) {
 	// url.QueryEscape encodes the user's text for safe use in a URL,
 	// like encodeURIComponent() in JavaScript or urllib.parse.quote() in Python.
 	path := fmt.Sprintf("/search/show?query=%s&extended=full&limit=1", url.QueryEscape(query))
 
-	resp, err := c.do(http.MethodGet, path, nil, nil)
+	resp, err := c.do(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("searching shows: %w", err)
 	}
@@ -342,7 +347,7 @@ func (c *Client) SearchShows(query string) ([]SearchResult, error) {
 
 // MarkEpisodeWatched tells Trakt the user has watched a specific episode.
 // Uses: POST /sync/history - expects 201 Created on success.
-func (c *Client) MarkEpisodeWatched(token TokenSource, traktShowID, season, episodeNumber int) error {
+func (c *Client) MarkEpisodeWatched(ctx context.Context, token TokenSource, traktShowID, season, episodeNumber int) error {
 	// Build the nested request body: shows → seasons → episodes
 	reqBody := SyncHistoryRequest{
 		Shows: []SyncShowEntry{
@@ -363,7 +368,7 @@ func (c *Client) MarkEpisodeWatched(token TokenSource, traktShowID, season, epis
 		},
 	}
 
-	resp, err := c.do(http.MethodPost, "/sync/history", token, reqBody)
+	resp, err := c.do(ctx, http.MethodPost, "/sync/history", token, reqBody)
 	if err != nil {
 		return fmt.Errorf("marking episode watched: %w", err)
 	}
@@ -378,7 +383,7 @@ func (c *Client) MarkEpisodeWatched(token TokenSource, traktShowID, season, epis
 // UnmarkEpisodeWatched removes a specific episode from the user's Trakt watch history.
 // Uses: POST /sync/history/remove - the mirror of /sync/history.
 // Same request body shape, but returns 200 OK instead of 201 Created.
-func (c *Client) UnmarkEpisodeWatched(token TokenSource, traktShowID, season, episodeNumber int) error {
+func (c *Client) UnmarkEpisodeWatched(ctx context.Context, token TokenSource, traktShowID, season, episodeNumber int) error {
 	// Reuses the same SyncHistoryRequest structure — Trakt identifies the episode
 	// by show ID + season + episode number. WatchedAt is irrelevant for removal.
 	reqBody := SyncHistoryRequest{
@@ -395,7 +400,7 @@ func (c *Client) UnmarkEpisodeWatched(token TokenSource, traktShowID, season, ep
 		},
 	}
 
-	resp, err := c.do(http.MethodPost, "/sync/history/remove", token, reqBody)
+	resp, err := c.do(ctx, http.MethodPost, "/sync/history/remove", token, reqBody)
 	if err != nil {
 		return fmt.Errorf("unmarking episode watched: %w", err)
 	}

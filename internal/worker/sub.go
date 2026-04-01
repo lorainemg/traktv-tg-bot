@@ -1,10 +1,12 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
 
+	appotel "github.com/loraine/traktv-tg-bot/internal/otel"
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 )
 
@@ -19,7 +21,7 @@ func (w *Worker) handleSub(task Task) {
 		return
 	}
 
-	existing, err := w.store.GetUserByTelegramID(payload.TelegramID)
+	existing, err := w.store.GetUserByTelegramID(task.Ctx, payload.TelegramID)
 	if err != nil {
 		slog.Error("failed to look up existing user", "error", err)
 		w.results <- task.TextResult("Something went wrong. Please try again.")
@@ -29,7 +31,7 @@ func (w *Worker) handleSub(task Task) {
 	if existing != nil {
 		w.handleExistingUserSub(task, payload, existing)
 		// Update names on every /sub - catches Telegram display name changes.
-		err = w.store.UpdateUserNames(payload.TelegramID, payload.FirstName, payload.Username)
+		err = w.store.UpdateUserNames(task.Ctx, payload.TelegramID, payload.FirstName, payload.Username)
 		if err != nil {
 			slog.Error("failed to update user names", "error", err)
 		}
@@ -51,7 +53,7 @@ func (w *Worker) handleExistingUserSub(task Task, payload SubPayload, existing *
 			ChatID: existing.ChatID,
 			Text:   fmt.Sprintf("%s has moved their notifications to another chat. Their notifications will no longer be sent here.", existing.MentionLink()),
 		}
-		if err := w.store.UpdateUserChatID(payload.TelegramID, task.ChatID); err != nil {
+		if err := w.store.UpdateUserChatID(task.Ctx, payload.TelegramID, task.ChatID); err != nil {
 			slog.Error("failed to update user chat ID", "error", err)
 			w.results <- task.TextResult("Failed to move notifications. Please try again.")
 			return
@@ -59,7 +61,7 @@ func (w *Worker) handleExistingUserSub(task Task, payload SubPayload, existing *
 	}
 
 	if existing.Muted {
-		if err := w.store.UpdateUserMuted(payload.TelegramID, false); err != nil {
+		if err := w.store.UpdateUserMuted(task.Ctx, payload.TelegramID, false); err != nil {
 			slog.Error("failed to unmute user", "error", err)
 			w.results <- task.TextResult("Failed to re-subscribe. Please try again.")
 			return
@@ -78,7 +80,7 @@ func (w *Worker) handleExistingUserSub(task Task, payload SubPayload, existing *
 
 // handleNewUserSub starts the Trakt OAuth device code flow for a first-time user.
 func (w *Worker) handleNewUserSub(task Task, payload SubPayload) {
-	dc, err := w.trakt.RequestDeviceCode()
+	dc, err := w.trakt.RequestDeviceCode(task.Ctx)
 	if err != nil {
 		slog.Error("failed to request device code", "error", err)
 		w.results <- task.TextResult("Failed to start Trakt auth. Please try again.")
@@ -88,16 +90,19 @@ func (w *Worker) handleNewUserSub(task Task, payload SubPayload) {
 	w.results <- task.TextResult(fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode))
 
 	// Poll in a goroutine so we don't block the worker loop.
-	go w.pollForToken(task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval, dc.ExpiresIn)
+	go w.pollForToken(appotel.DetachedContext(task.Ctx), task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval, dc.ExpiresIn)
 }
 
 // pollForToken repeatedly checks if the user has authorized the device code.
 // Runs as a separate goroutine so the worker's main loop stays free.
-func (w *Worker) pollForToken(chatID int64, threadID int, payload SubPayload, deviceCode string, intervalSecs int, expiresInSecs int) {
+func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, payload SubPayload, deviceCode string, intervalSecs int, expiresInSecs int) {
+	ctx, span := workerTracer.Start(ctx, "worker.poll_for_token")
+	defer span.End()
+
 	// Build a minimal Task so we can use TextResult inside this goroutine.
 	// pollForToken runs outside the worker loop, so it doesn't have the
 	// original task - we reconstruct just enough to build Results.
-	t := Task{ChatID: chatID, ThreadID: threadID}
+	t := Task{ChatID: chatID, ThreadID: threadID, Ctx: ctx}
 
 	deadline := time.After(time.Duration(expiresInSecs) * time.Second)
 	ticker := time.NewTicker(time.Duration(intervalSecs) * time.Second)
@@ -109,7 +114,7 @@ func (w *Worker) pollForToken(chatID int64, threadID int, payload SubPayload, de
 			w.results <- t.TextResult("Trakt auth timed out. Please try again.")
 			return
 		case <-ticker.C:
-			token, err := w.trakt.PollForToken(deviceCode)
+			token, err := w.trakt.PollForToken(ctx, deviceCode)
 			if err != nil {
 				w.results <- t.TextResult(fmt.Sprintf("Trakt auth failed: %v", err))
 				return
@@ -123,7 +128,7 @@ func (w *Worker) pollForToken(chatID int64, threadID int, payload SubPayload, de
 			expiresAt := time.Unix(int64(token.CreatedAt+token.ExpiresIn), 0)
 
 			// pollForToken only runs for new users, so just create.
-			err = w.store.CreateOrUpdateUser(&storage.User{
+			err = w.store.CreateOrUpdateUser(ctx, &storage.User{
 				TelegramID:          payload.TelegramID,
 				FirstName:           payload.FirstName,
 				Username:            payload.Username,

@@ -15,6 +15,7 @@ import (
 	// the embedded data with the time package, similar to Python's import-for-side-effects pattern.
 	_ "time/tzdata"
 
+	"github.com/loraine/traktv-tg-bot/internal/otel"
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/telegram"
 	"github.com/loraine/traktv-tg-bot/internal/tmdb"
@@ -52,12 +53,12 @@ func startEpisodeChecker(ctx context.Context, w *worker.Worker, interval time.Du
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
+	w.Submit(worker.Task{Type: worker.TaskCheckEpisodes, Ctx: ctx})
 
 	for {
 		select {
 		case <-ticker.C:
-			w.Submit(worker.Task{Type: worker.TaskCheckEpisodes})
+			w.Submit(worker.Task{Type: worker.TaskCheckEpisodes, Ctx: ctx})
 		case <-ctx.Done():
 			return
 		}
@@ -73,7 +74,7 @@ func startWatchHistoryChecker(ctx context.Context, w *worker.Worker, interval ti
 	for {
 		select {
 		case <-ticker.C:
-			w.Submit(worker.Task{Type: worker.TaskCheckWatchHistory})
+			w.Submit(worker.Task{Type: worker.TaskCheckWatchHistory, Ctx: ctx})
 		case <-ctx.Done():
 			return
 		}
@@ -88,7 +89,7 @@ func startDeletionChecker(ctx context.Context, w *worker.Worker, interval time.D
 	for {
 		select {
 		case <-ticker.C:
-			w.Submit(worker.Task{Type: worker.TaskProcessDeletions})
+			w.Submit(worker.Task{Type: worker.TaskProcessDeletions, Ctx: ctx})
 		case <-ctx.Done():
 			return
 		}
@@ -140,6 +141,17 @@ func main() {
 	// process receives SIGINT (Ctrl+C) or SIGTERM (docker stop).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	shutdownTelemetry, err := otel.Setup(ctx, "bot")
+	if err != nil {
+		slog.Error("failed to initialize OpenTelemetry", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTelemetry(context.Background()); err != nil {
+			slog.Error("failed to shutdown OpenTelemetry", "error", err)
+		}
+	}()
 
 	// Start the worker loop in the background.
 	// "go" launches it as a goroutine - it runs concurrently, not blocking main().

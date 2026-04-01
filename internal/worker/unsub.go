@@ -15,7 +15,7 @@ func (w *Worker) handleUnsub(task Task) {
 		return
 	}
 
-	user, err := w.store.GetUserByTelegramID(payload.TelegramID)
+	user, err := w.store.GetUserByTelegramID(task.Ctx, payload.TelegramID)
 	if err != nil {
 		slog.Error("failed to look up user", "error", err)
 		w.results <- task.TextResult("Something went wrong, please try again.")
@@ -26,10 +26,11 @@ func (w *Worker) handleUnsub(task Task) {
 		return
 	}
 
-	if err := w.store.UpdateUserMuted(payload.TelegramID, true); err != nil {
+	if err := w.store.UpdateUserMuted(task.Ctx, payload.TelegramID, true); err != nil {
 		w.results <- task.TextResult(fmt.Sprintf("Failed to unsubscribe: %v", err))
 		return
 	}
 
 	w.results <- task.TextResult(fmt.Sprintf("Notifications paused for %s. Use /sub to re-subscribe anytime.", user.MentionLink()))
 }
+

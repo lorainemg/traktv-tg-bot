@@ -11,24 +11,24 @@ import (
 // handleCheckWatchHistory polls Trakt for each user's recent watch history
 // and updates TG notifications when an episode was marked as watched on Trakt
 // but not yet reflected in the bot's watch status.
-func (w *Worker) handleCheckWatchHistory() {
+func (w *Worker) handleCheckWatchHistory(task Task) {
 	slog.Info("checking Trakt watch history")
 
-	chatIDs, err := w.store.GetDistinctChatIDs()
+	chatIDs, err := w.store.GetDistinctChatIDs(task.Ctx)
 	if err != nil {
 		slog.Error("failed to fetch chat IDs", "error", err)
 		return
 	}
 
 	for _, chatID := range chatIDs {
-		users, err := w.store.GetUsersByChatID(chatID)
+		users, err := w.store.GetUsersByChatID(task.Ctx, chatID)
 		if err != nil {
 			slog.Error("failed to fetch users for chat", "chat_id", chatID, "error", err)
 			continue
 		}
 		for i := range users {
 			user := &users[i]
-			w.checkUserWatchHistory(user, chatID)
+			w.checkUserWatchHistory(task, user, chatID)
 		}
 	}
 }
@@ -36,8 +36,8 @@ func (w *Worker) handleCheckWatchHistory() {
 // checkUserWatchHistory fetches a single user's recent Trakt watch history,
 // compares it against their unwatched notification statuses, and updates
 // any matches.
-func (w *Worker) checkUserWatchHistory(user *storage.User, chatID int64) {
-	unwatched, err := w.store.GetUnwatchedStatusesByUser(user.ID)
+func (w *Worker) checkUserWatchHistory(task Task, user *storage.User, chatID int64) {
+	unwatched, err := w.store.GetUnwatchedStatusesByUser(task.Ctx, user.ID)
 	if err != nil {
 		slog.Error("failed to fetch unwatched statuses", "user_id", user.ID, "error", err)
 		return
@@ -49,7 +49,7 @@ func (w *Worker) checkUserWatchHistory(user *storage.User, chatID int64) {
 	// Look back 2 hours to catch watches since the last poll, with a safety margin
 	startAt := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 
-	history, err := w.trakt.GetWatchHistory(w.tokenFor(user), startAt)
+	history, err := w.trakt.GetWatchHistory(task.Ctx, w.tokenFor(task.Ctx, user), startAt)
 	if err != nil {
 		slog.Error("failed to fetch watch history", "user_id", user.ID, "error", err)
 		return
@@ -58,11 +58,11 @@ func (w *Worker) checkUserWatchHistory(user *storage.User, chatID int64) {
 	matched := syncWatchedEpisodes(history, unwatched)
 
 	for _, status := range matched {
-		if err := w.store.MarkWatchStatus(status.Notification.ID, user.ID); err != nil {
+		if err := w.store.MarkWatchStatus(task.Ctx, status.Notification.ID, user.ID); err != nil {
 			slog.Error("failed to update watch status from history sync", "error", err)
 			continue
 		}
-		w.refreshNotificationMessage(&status.Notification, chatID)
+		w.refreshNotificationMessage(task.Ctx, &status.Notification, chatID)
 	}
 }
 

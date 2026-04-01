@@ -21,7 +21,7 @@ type unseenShow struct {
 func (w *Worker) handleUnseen(task Task) {
 	payload := task.Payload.(UnseenPayload)
 
-	user, err := w.resolveTargetUser(payload.UserTarget)
+	user, err := w.resolveTargetUser(task.Ctx, payload.UserTarget)
 	if err != nil {
 		slog.Error("unseen: failed to resolve target user", "error", err)
 		return
@@ -36,7 +36,7 @@ func (w *Worker) handleUnseen(task Task) {
 		return
 	}
 
-	entries, err := w.trakt.GetWatchedShows(w.tokenFor(user))
+	entries, err := w.trakt.GetWatchedShows(task.Ctx, w.tokenFor(task.Ctx, user))
 	if err != nil {
 		slog.Error("unseen: failed to fetch watched shows", "user_id", user.ID, "error", err)
 		w.results <- task.TextResult("Failed to fetch shows from Trakt. Try again later.")

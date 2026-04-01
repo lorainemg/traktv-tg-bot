@@ -26,7 +26,7 @@ func (w *Worker) handleRegisterTopic(task Task) {
 		Name:     strings.ToLower(payload.Name),
 	}
 
-	if err := w.store.CreateOrUpdateTopic(topic); err != nil {
+	if err := w.store.CreateOrUpdateTopic(task.Ctx, topic); err != nil {
 		slog.Error("failed to register topic", "error", err)
 		w.results <- task.TextResult("Failed to register topic. Please try again.")
 		return
