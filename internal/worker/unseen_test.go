@@ -2,10 +2,13 @@ package worker
 
 import (
 	"testing"
+	"time"
 
+	"github.com/loraine/traktv-tg-bot/internal/mocks"
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/trakt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestCollectUnseenShows(t *testing.T) {
@@ -18,7 +21,6 @@ func TestCollectUnseenShows(t *testing.T) {
 
 	t.Run("filters out caught-up shows", func(t *testing.T) {
 		result := collectUnseenShows(entries)
-		// Breaking Bad (20/20) should be excluded
 		assert.Len(t, result, 3)
 		for _, show := range result {
 			assert.NotEqual(t, "Breaking Bad", show.Show.Title)
@@ -27,7 +29,6 @@ func TestCollectUnseenShows(t *testing.T) {
 
 	t.Run("calculates correct unseen count", func(t *testing.T) {
 		result := collectUnseenShows(entries)
-		// Find Severance — 10 aired minus 5 played = 5 unseen
 		for _, show := range result {
 			if show.Show.Title == "Severance" {
 				assert.Equal(t, 5, show.Unseen)
@@ -39,7 +40,6 @@ func TestCollectUnseenShows(t *testing.T) {
 
 	t.Run("sorts by unseen count descending", func(t *testing.T) {
 		result := collectUnseenShows(entries)
-		// Shogun (9) > Severance (5) > The Bear (2)
 		assert.Equal(t, "Shogun", result[0].Show.Title)
 		assert.Equal(t, "Severance", result[1].Show.Title)
 		assert.Equal(t, "The Bear", result[2].Show.Title)
@@ -53,20 +53,99 @@ func TestCollectUnseenShows(t *testing.T) {
 	})
 }
 
-func TestFormatUnseenMessage(t *testing.T) {
-	user := &storage.User{Username: "loraine"}
-	shows := []unseenShow{
-		{Show: trakt.Show{Title: "Severance", IDs: trakt.ShowIDs{Slug: "severance"}}, Unseen: 5},
-		{Show: trakt.Show{Title: "The Bear", IDs: trakt.ShowIDs{Slug: "the-bear"}}, Unseen: 2},
-	}
+func TestHandleUnseen(t *testing.T) {
+	t.Run("sends auth prompt when user not found", func(t *testing.T) {
+		store := &mocks.MockStore{}
+		store.On("GetUserByTelegramID", int64(111)).Return(nil, nil)
 
-	result := formatUnseenMessage(user, shows)
+		w := newTestWorker(store, nil)
 
-	// Header includes the user's mention link
-	assert.Contains(t, result, "[@loraine](https://t.me/loraine)")
-	// Each show appears as a Trakt link with unseen count
-	assert.Contains(t, result, "[Severance](https://trakt.tv/shows/severance)")
-	assert.Contains(t, result, "5 unseen")
-	assert.Contains(t, result, "[The Bear](https://trakt.tv/shows/the-bear)")
-	assert.Contains(t, result, "2 unseen")
+		w.handleUnseen(Task{
+			ChatID: 42,
+			Payload: UnseenPayload{
+				UserTarget: UserTarget{RequesterID: 111},
+			},
+		})
+
+		result := <-w.Results()
+		assert.Contains(t, result.Text, "/sub")
+		store.AssertExpectations(t)
+	})
+
+	t.Run("sends muted message when user is unsubscribed", func(t *testing.T) {
+		store := &mocks.MockStore{}
+		user := &storage.User{TelegramID: 111, Username: "loraine", Muted: true}
+		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
+
+		w := newTestWorker(store, nil)
+
+		w.handleUnseen(Task{
+			ChatID: 42,
+			Payload: UnseenPayload{
+				UserTarget: UserTarget{RequesterID: 111},
+			},
+		})
+
+		result := <-w.Results()
+		assert.Contains(t, result.Text, "unsubscribed")
+		store.AssertExpectations(t)
+	})
+
+	t.Run("sends all caught up when no unseen episodes", func(t *testing.T) {
+		store := &mocks.MockStore{}
+		traktMock := &mocks.MockTrakt{}
+		user := &storage.User{
+			TelegramID:          111,
+			Username:            "loraine",
+			TraktAccessToken:    "token123",
+			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
+		}
+		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
+		traktMock.On("GetWatchedShows", mock.AnythingOfType("trakt.TokenSource")).Return(
+			[]trakt.WatchedShowEntry{
+				{Plays: 10, Show: trakt.Show{Title: "Severance", AiredEpisodes: 10}},
+			}, nil,
+		)
+
+		w := newTestWorker(store, traktMock)
+
+		w.handleUnseen(Task{
+			ChatID: 42,
+			Payload: UnseenPayload{
+				UserTarget: UserTarget{RequesterID: 111},
+			},
+		})
+
+		result := <-w.Results()
+		assert.Contains(t, result.Text, "caught up")
+		store.AssertExpectations(t)
+		traktMock.AssertExpectations(t)
+	})
+
+	t.Run("user has unseen episodes", func(t *testing.T) {
+		store := &mocks.MockStore{}
+		traktMock := &mocks.MockTrakt{}
+		user := &storage.User{TelegramID: 111, Username: "loraine"}
+		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
+		traktMock.On("GetWatchedShows", mock.AnythingOfType("trakt.TokenSource")).Return(
+			[]trakt.WatchedShowEntry{
+				{Plays: 8, Show: trakt.Show{Title: "Severance", IDs: trakt.ShowIDs{Slug: "severance"}, AiredEpisodes: 10}},
+			}, nil,
+		)
+
+		w := newTestWorker(store, traktMock)
+
+		w.handleUnseen(Task{
+			ChatID: 42,
+			Payload: UnseenPayload{
+				UserTarget: UserTarget{RequesterID: 111},
+			},
+		})
+
+		result := <-w.Results()
+		assert.Contains(t, result.Text, "Unseen episodes for")
+		assert.Contains(t, result.Text, "Severance")
+		store.AssertExpectations(t)
+		traktMock.AssertExpectations(t)
+	})
 }

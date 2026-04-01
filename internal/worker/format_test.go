@@ -176,3 +176,38 @@ func TestWatchButtons(t *testing.T) {
 	assert.Equal(t, "↩️ Unwatched", rows[0][1].Text)
 	assert.Equal(t, "unwatched:42", rows[0][1].CallbackData)
 }
+
+func TestFormatWatchedByLine(t *testing.T) {
+	t.Run("returns all caught up when everyone watched", func(t *testing.T) {
+		result := formatWatchedByLine(nil, true)
+		assert.Equal(t, "All caught up ✅", result)
+	})
+
+	t.Run("shows watched and pending icons per user", func(t *testing.T) {
+		statuses := []storage.WatchStatus{
+			{Watched: true, User: storage.User{Username: "loraine"}},
+			{Watched: false, User: storage.User{FirstName: "Bob", TelegramID: 222}},
+		}
+
+		result := formatWatchedByLine(statuses, false)
+
+		// loraine watched → ✅, Bob pending → ⏳
+		assert.Contains(t, result, "Watched by:")
+		assert.Contains(t, result, "[@loraine](https://t.me/loraine) ✅")
+		assert.Contains(t, result, "[Bob](tg://user?id=222) ⏳")
+	})
+
+	t.Run("all users have watched but no haveAllWatched set", func(t *testing.T) {
+		statuses := []storage.WatchStatus{
+			{Watched: true, User: storage.User{Username: "loraine"}},
+			{Watched: true, User: storage.User{FirstName: "Bob", TelegramID: 222}},
+		}
+
+		result := formatWatchedByLine(statuses, false)
+
+		// loraine watched → ✅, Bob pending → ⏳
+		assert.Contains(t, result, "Watched by:")
+		assert.Contains(t, result, "[@loraine](https://t.me/loraine) ✅")
+		assert.Contains(t, result, "[Bob](tg://user?id=222) ✅")
+	})
+}
