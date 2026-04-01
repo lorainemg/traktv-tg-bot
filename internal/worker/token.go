@@ -62,4 +62,3 @@ func (w *Worker) ensureFreshToken(ctx context.Context, user *storage.User) error
 	slog.Info("trakt token refreshed", "user_id", user.ID, "expires_at", expiresAt)
 	return nil
 }
-

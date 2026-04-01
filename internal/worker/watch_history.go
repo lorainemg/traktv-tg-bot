@@ -14,7 +14,7 @@ import (
 func (w *Worker) handleCheckWatchHistory(task Task) {
 	slog.Info("checking Trakt watch history")
 
-	chatIDs, err := w.store.GetDistinctChatIDs(task.Ctx, )
+	chatIDs, err := w.store.GetDistinctChatIDs(task.Ctx)
 	if err != nil {
 		slog.Error("failed to fetch chat IDs", "error", err)
 		return
@@ -82,4 +82,3 @@ func syncWatchedEpisodes(history []trakt.HistoryEntry, unwatched []storage.Watch
 	}
 	return watched
 }
-

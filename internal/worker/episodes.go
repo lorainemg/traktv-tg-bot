@@ -21,7 +21,7 @@ type chatEpisode struct {
 func (w *Worker) handleCheckEpisodes(task Task) {
 	slog.Info("checking for new episodes")
 
-	chatIDs, err := w.store.GetDistinctChatIDs(task.Ctx, )
+	chatIDs, err := w.store.GetDistinctChatIDs(task.Ctx)
 	if err != nil {
 		slog.Error("failed to fetch chat IDs", "error", err)
 		return
@@ -264,4 +264,3 @@ func buildNotification(entry trakt.CalendarEntry, chatID int64, watchInfo *tmdb.
 
 	return notification
 }
-

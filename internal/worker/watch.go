@@ -252,4 +252,3 @@ func (w *Worker) scheduleDeletion(ctx context.Context, notification *storage.Not
 		slog.Error("failed to schedule deletion", "error", err)
 	}
 }
-

@@ -104,4 +104,3 @@ func formatWhoWatchesMessage(showLink string, watchers []*storage.User) string {
 
 	return b.String()
 }
-

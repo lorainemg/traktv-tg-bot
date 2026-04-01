@@ -70,7 +70,7 @@ func (w *Worker) handleUpcoming(task Task) {
 func (w *Worker) handleUpcomingPage(task Task) {
 	p := task.Payload.(PagePayload)
 
-	w.results <- Result{Ctx: task.Ctx, CallbackQueryID: p.CallbackQueryID}
+	w.answerCallback(task.Ctx, p.CallbackQueryID, "", false)
 
 	users, err := w.store.GetUsersByChatID(task.Ctx, task.ChatID)
 	if err != nil {
@@ -222,4 +222,3 @@ func formatTimeUntil(airTime time.Time) string {
 		return fmt.Sprintf("%dm", minutes)
 	}
 }
-

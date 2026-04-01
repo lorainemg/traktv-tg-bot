@@ -56,7 +56,7 @@ func (w *Worker) handleShowsPage(task Task) {
 	p := task.Payload.(PagePayload)
 
 	// Answer the callback query to remove Telegram's loading spinner.
-	w.results <- Result{Ctx: task.Ctx, CallbackQueryID: p.CallbackQueryID}
+	w.answerCallback(task.Ctx, p.CallbackQueryID, "", false)
 
 	user, err := w.store.GetUserByTelegramID(task.Ctx, p.TargetTelegramID)
 	if err != nil || user == nil {
@@ -127,4 +127,3 @@ func formatShowsMessage(shows []trakt.Show, page, totalPages, totalShows int, us
 	}
 	return header + strings.Join(lines, "\n")
 }
-

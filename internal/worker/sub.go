@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	appotel "github.com/loraine/traktv-tg-bot/internal/otel"
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 )
 
@@ -89,12 +90,15 @@ func (w *Worker) handleNewUserSub(task Task, payload SubPayload) {
 	w.results <- task.TextResult(fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode))
 
 	// Poll in a goroutine so we don't block the worker loop.
-	go w.pollForToken(task.Ctx, task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval, dc.ExpiresIn)
+	go w.pollForToken(appotel.DetachedContext(task.Ctx), task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval, dc.ExpiresIn)
 }
 
 // pollForToken repeatedly checks if the user has authorized the device code.
 // Runs as a separate goroutine so the worker's main loop stays free.
 func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, payload SubPayload, deviceCode string, intervalSecs int, expiresInSecs int) {
+	ctx, span := workerTracer.Start(ctx, "worker.poll_for_token")
+	defer span.End()
+
 	// Build a minimal Task so we can use TextResult inside this goroutine.
 	// pollForToken runs outside the worker loop, so it doesn't have the
 	// original task - we reconstruct just enough to build Results.
@@ -144,4 +148,3 @@ func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, p
 		}
 	}
 }
-

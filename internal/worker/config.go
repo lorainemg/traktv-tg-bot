@@ -69,12 +69,7 @@ func (w *Worker) handleToggleDeleteWatched(task Task) {
 	}
 
 	// Answer the callback query with a brief toast
-	w.results <- Result{
-		Ctx:             task.Ctx,
-		ChatID:          payload.ChatID,
-		CallbackQueryID: payload.CallbackQueryID,
-		Text:            fmt.Sprintf("Delete watched: %s", deleteLabel(deleteWatched)),
-	}
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, fmt.Sprintf("Delete watched: %s", deleteLabel(deleteWatched)), false)
 
 	// Edit the config message to show updated values
 	w.results <- buildConfigResult(task.Ctx, payload.ChatID, task.ThreadID, payload.MessageID, country, timezone, deleteWatched, notifyHours)
@@ -95,12 +90,7 @@ func (w *Worker) handlePromptCountry(task Task) {
 	})
 
 	// Answer the callback (removes the loading spinner on the button)
-	w.results <- Result{
-		Ctx:             task.Ctx,
-		ChatID:          payload.ChatID,
-		CallbackQueryID: payload.CallbackQueryID,
-		Text:            "Send a country code below",
-	}
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, "Send a country code below", false)
 
 	// Prompt the user for input - ForceReply makes Telegram open the reply UI,
 	// which ensures the bot receives the response even in group chats with
@@ -131,12 +121,7 @@ func (w *Worker) handlePromptNotifyHours(task Task) {
 		messageID: payload.MessageID,
 	})
 
-	w.results <- Result{
-		Ctx:             task.Ctx,
-		ChatID:          payload.ChatID,
-		CallbackQueryID: payload.CallbackQueryID,
-		Text:            "Send the notify window in hours",
-	}
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, "Send the notify window in hours", false)
 
 	w.results <- Result{
 		Ctx:                   task.Ctx,
@@ -169,13 +154,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 
 	timezones := data.GetTimezonesForCountry(country)
 	if len(timezones) == 0 {
-		w.results <- Result{
-			Ctx:               task.Ctx,
-			ChatID:            payload.ChatID,
-			CallbackQueryID:   payload.CallbackQueryID,
-			CallbackShowAlert: true,
-			Text:              fmt.Sprintf("No timezone data for country %q. Change your country first.", country),
-		}
+		w.answerCallback(task.Ctx, payload.CallbackQueryID, fmt.Sprintf("No timezone data for country %q. Change your country first.", country), true)
 		return
 	}
 
@@ -193,12 +172,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 			return
 		}
 
-		w.results <- Result{
-			Ctx:             task.Ctx,
-			ChatID:          payload.ChatID,
-			CallbackQueryID: payload.CallbackQueryID,
-			Text:            fmt.Sprintf("Timezone set to %s", timezones[0]),
-		}
+		w.answerCallback(task.Ctx, payload.CallbackQueryID, fmt.Sprintf("Timezone set to %s", timezones[0]), false)
 		w.results <- buildConfigResult(task.Ctx, payload.ChatID, task.ThreadID, payload.MessageID, country, timezones[0], deleteWatched, notifyHours)
 		return
 	}
@@ -212,12 +186,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 		}
 	}
 
-	w.results <- Result{
-		Ctx:             task.Ctx,
-		ChatID:          payload.ChatID,
-		CallbackQueryID: payload.CallbackQueryID,
-		Text:            "Pick a timezone",
-	}
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, "Pick a timezone", false)
 
 	w.results <- Result{
 		Ctx:           task.Ctx,
@@ -257,12 +226,7 @@ func (w *Worker) handleSetTimezone(task Task) {
 		return
 	}
 
-	w.results <- Result{
-		Ctx:             task.Ctx,
-		ChatID:          payload.ChatID,
-		CallbackQueryID: payload.CallbackQueryID,
-		Text:            fmt.Sprintf("Timezone set to %s", payload.Timezone),
-	}
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, fmt.Sprintf("Timezone set to %s", payload.Timezone), false)
 
 	// Replace the timezone picker with the updated config message
 	w.results <- buildConfigResult(task.Ctx, payload.ChatID, task.ThreadID, payload.MessageID, country, payload.Timezone, deleteWatched, notifyHours)
@@ -468,4 +432,3 @@ func deleteLabel(on bool) string {
 	}
 	return "Off"
 }
-

@@ -6,126 +6,13 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+
 	// models provides Telegram API types like ParseMode, Update, etc.
 	"github.com/loraine/traktv-tg-bot/internal/worker"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
-
-var telegramTracer = otel.Tracer("bot.telegram")
-
-const maxTraceTextLen = 256
-
-func traceUpdateMiddleware() bot.Middleware {
-	return func(next bot.HandlerFunc) bot.HandlerFunc {
-		return func(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
-			spanName := "telegram.update"
-			if update != nil {
-				switch {
-				case update.CallbackQuery != nil:
-					spanName = "telegram.callback_query"
-				case update.Message != nil:
-					spanName = "telegram.message"
-				}
-			}
-
-			ctx, span := telegramTracer.Start(ctx, spanName, trace.WithAttributes(updateTraceAttributes(update)...))
-			defer span.End()
-
-			next(ctx, tgBot, update)
-		}
-	}
-}
-
-func updateTraceAttributes(update *models.Update) []attribute.KeyValue {
-	if update == nil {
-		return nil
-	}
-
-	attrs := []attribute.KeyValue{attribute.Int64("telegram.update.id", int64(update.ID))}
-
-	if msg := update.Message; msg != nil {
-		attrs = append(attrs,
-			attribute.String("telegram.update.type", "message"),
-			attribute.Int64("telegram.chat.id", msg.Chat.ID),
-			attribute.Int("telegram.message.id", msg.ID),
-			attribute.Int("telegram.thread.id", msg.MessageThreadID),
-		)
-		if msg.From != nil {
-			attrs = append(attrs, attribute.Int64("telegram.sender.id", msg.From.ID))
-		}
-		if msg.ReplyToMessage != nil {
-			attrs = append(attrs, attribute.Int("telegram.reply.id", msg.ReplyToMessage.ID))
-		}
-		if msg.ForwardOrigin != nil {
-			attrs = append(attrs, attribute.Bool("telegram.forwarded", true))
-			switch msg.ForwardOrigin.Type {
-			case models.MessageOriginTypeUser:
-				if mo := msg.ForwardOrigin.MessageOriginUser; mo != nil {
-					attrs = append(attrs, attribute.Int64("telegram.forward.sender.id", mo.SenderUser.ID))
-				}
-			case models.MessageOriginTypeChat:
-				if mo := msg.ForwardOrigin.MessageOriginChat; mo != nil {
-					attrs = append(attrs, attribute.Int64("telegram.forward.chat.id", mo.SenderChat.ID))
-				}
-			case models.MessageOriginTypeChannel:
-				if mo := msg.ForwardOrigin.MessageOriginChannel; mo != nil {
-					attrs = append(attrs,
-						attribute.Int64("telegram.forward.chat.id", mo.Chat.ID),
-						attribute.Int("telegram.forward.id", mo.MessageID),
-					)
-				}
-			case models.MessageOriginTypeHiddenUser:
-				attrs = append(attrs, attribute.String("telegram.forward.sender", "hidden_user"))
-			}
-		}
-
-		if msg.Text != "" {
-			attrs = append(attrs,
-				attribute.String("telegram.text", truncateForTrace(msg.Text, maxTraceTextLen)),
-				attribute.Int("telegram.text.len", utf8.RuneCountInString(msg.Text)),
-			)
-		}
-
-		return attrs
-	}
-
-	if cq := update.CallbackQuery; cq != nil {
-		attrs = append(attrs,
-			attribute.String("telegram.update.type", "callback_query"),
-			attribute.String("telegram.callback.id", cq.ID),
-			attribute.Int64("telegram.sender.id", cq.From.ID),
-		)
-		if cq.Data != "" {
-			attrs = append(attrs,
-				attribute.String("telegram.callback.data", truncateForTrace(cq.Data, maxTraceTextLen)),
-				attribute.Int("telegram.callback.data.len", utf8.RuneCountInString(cq.Data)),
-			)
-		}
-		if cq.Message.Message != nil {
-			attrs = append(attrs,
-				attribute.Int64("telegram.chat.id", cq.Message.Message.Chat.ID),
-				attribute.Int("telegram.message.id", cq.Message.Message.ID),
-				attribute.Int("telegram.thread.id", cq.Message.Message.MessageThreadID),
-			)
-		}
-	}
-
-	return attrs
-}
-
-func truncateForTrace(input string, maxRunes int) string {
-	if maxRunes <= 0 || utf8.RuneCountInString(input) <= maxRunes {
-		return input
-	}
-	runes := []rune(input)
-	return string(runes[:maxRunes]) + "..."
-}
 
 // Bot ties together the Telegram bot and the worker queue.
 // The bot is now a pure "UI layer" - it receives commands and forwards them
@@ -136,22 +23,10 @@ type Bot struct {
 }
 
 func (b *Bot) submit(ctx context.Context, task worker.Task) {
-	taskCtx, span := telegramTracer.Start(ctx, "telegram.submit_task",
-		trace.WithAttributes(
-			attribute.String("task.type", task.Type.String()),
-			attribute.Int64("chat.id", task.ChatID),
-		),
-	)
+	taskCtx, span := startSubmitSpan(ctx, task)
 	task.Ctx = taskCtx
 	b.worker.Submit(task)
 	span.End()
-}
-
-func resultCtx(root context.Context, result worker.Result) context.Context {
-	if result.Ctx != nil {
-		return result.Ctx
-	}
-	return root
 }
 
 // NewBot creates and configures a Telegram bot with command handlers.
@@ -161,6 +36,7 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	}
 
 	opts := []bot.Option{
+		withInstrumentedHTTPClientOption(),
 		bot.WithMiddlewares(traceUpdateMiddleware()),
 		bot.WithDefaultHandler(b.handleDefault),
 		// By default, Telegram only sends message updates. We need to explicitly
@@ -201,12 +77,7 @@ func (b *Bot) Start(ctx context.Context) {
 // SendResultsMessage dispatches a Result to the appropriate Telegram action.
 // Priority: CallbackQuery > Delete > Edit > Send new.
 func (b *Bot) SendResultsMessage(result worker.Result) {
-	ctx, span := telegramTracer.Start(resultCtx(context.Background(), result), "telegram.send_result",
-		trace.WithAttributes(
-			attribute.Int64("chat.id", result.ChatID),
-			attribute.Int("thread.id", result.ThreadID),
-		),
-	)
+	ctx, span := startSendResultSpan(result)
 	defer span.End()
 	result.Ctx = ctx
 
@@ -224,7 +95,7 @@ func (b *Bot) SendResultsMessage(result worker.Result) {
 
 // answerCallbackResult answers a callback query with a toast or popup.
 func (b *Bot) answerCallbackResult(result worker.Result) {
-	_, err := b.bot.AnswerCallbackQuery(resultCtx(context.Background(), result), &bot.AnswerCallbackQueryParams{
+	_, err := b.bot.AnswerCallbackQuery(resultCtx(result), &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: result.CallbackQueryID,
 		Text:            result.Text,
 		ShowAlert:       result.CallbackShowAlert,
@@ -237,7 +108,7 @@ func (b *Bot) answerCallbackResult(result worker.Result) {
 // deleteResultsMessage deletes a Telegram message - used to clean up
 // notifications after everyone has watched.
 func (b *Bot) deleteResultsMessage(result worker.Result) {
-	_, err := b.bot.DeleteMessage(resultCtx(context.Background(), result), &bot.DeleteMessageParams{
+	_, err := b.bot.DeleteMessage(resultCtx(result), &bot.DeleteMessageParams{
 		ChatID:    result.ChatID,
 		MessageID: result.DeleteMessageID,
 	})
@@ -281,7 +152,7 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 	} else if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
 		params.ReplyMarkup = kb
 	}
-	msg, err := b.bot.SendMessage(resultCtx(context.Background(), result), params)
+	msg, err := b.bot.SendMessage(resultCtx(result), params)
 	if err != nil {
 		slog.Error("failed to send message", "error", err, "chat_id", result.ChatID)
 		return
@@ -324,7 +195,7 @@ func (b *Bot) editResultsMessage(result worker.Result) {
 	if kb := buildInlineKeyboard(result.InlineButtons); kb != nil {
 		editParams.ReplyMarkup = kb
 	}
-	_, err := b.bot.EditMessageText(resultCtx(context.Background(), result), editParams)
+	_, err := b.bot.EditMessageText(resultCtx(result), editParams)
 	if err != nil {
 		// Telegram rejects edits when the content hasn't changed - this is expected
 		// when a user clicks the button but was already marked as watched.
@@ -809,4 +680,3 @@ func (b *Bot) handlePaginationCallback(ctx context.Context, cq *models.CallbackQ
 		Payload:  payload,
 	})
 }
-

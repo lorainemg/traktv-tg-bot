@@ -10,27 +10,27 @@ type TaskType int
 // It starts at 0 and increments by 1 for each constant in the block -
 // like an auto-numbered enum in C#.
 const (
-	TaskCheckEpisodes TaskType = iota // = 0
-	TaskSub                          // = 1
-	TaskRegisterTopic                // = 2
-	TaskUnsub                        // = 3
-	TaskMarkWatched                      // = 4
-	TaskCheckWatchHistory                // = 5
-	TaskProcessDeletions                 // = 6
-	TaskUpcoming                         // = 7
-	TaskShows                            // = 8
-	TaskShowConfig                       // = 9
-	TaskToggleDeleteWatched              // = 10
-	TaskTextInput                        // = 11
-	TaskPromptCountry                    // = 12
-	TaskShowTimezones                    // = 13
-	TaskSetTimezone                      // = 14
-	TaskUnseen                           // = 15
-	TaskShowsPage                        // = 16 — paginated /shows callback
-	TaskUpcomingPage                     // = 17 — paginated /upcoming callback
-	TaskWhoWatches                       // = 18 — check which users watch a show
-	TaskPromptNotifyHours                // = 19 — prompt user for notify window hours
-	TaskMarkUnwatched                    // = 20 — reverse of TaskMarkWatched
+	TaskCheckEpisodes       TaskType = iota // = 0
+	TaskSub                                 // = 1
+	TaskRegisterTopic                       // = 2
+	TaskUnsub                               // = 3
+	TaskMarkWatched                         // = 4
+	TaskCheckWatchHistory                   // = 5
+	TaskProcessDeletions                    // = 6
+	TaskUpcoming                            // = 7
+	TaskShows                               // = 8
+	TaskShowConfig                          // = 9
+	TaskToggleDeleteWatched                 // = 10
+	TaskTextInput                           // = 11
+	TaskPromptCountry                       // = 12
+	TaskShowTimezones                       // = 13
+	TaskSetTimezone                         // = 14
+	TaskUnseen                              // = 15
+	TaskShowsPage                           // = 16 — paginated /shows callback
+	TaskUpcomingPage                        // = 17 — paginated /upcoming callback
+	TaskWhoWatches                          // = 18 — check which users watch a show
+	TaskPromptNotifyHours                   // = 19 — prompt user for notify window hours
+	TaskMarkUnwatched                       // = 20 — reverse of TaskMarkWatched
 )
 
 func (t TaskType) String() string {

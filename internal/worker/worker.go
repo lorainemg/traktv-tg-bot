@@ -86,7 +86,7 @@ func (w *Worker) Run(ctx context.Context) {
 			if task.Ctx == nil {
 				task.Ctx = context.Background()
 			}
-			taskCtx, span := workerTracer.Start(task.Ctx, taskTypeName(task.Type),
+			taskCtx, span := workerTracer.Start(task.Ctx, "worker."+task.Type.String(),
 				// Span attributes let us filter by chat/topic/task in Aspire.
 				// This is one high-level span per queued task, instead of manual spans in each handler.
 				trace.WithAttributes(
@@ -156,55 +156,6 @@ func (w *Worker) process(task Task) {
 	}
 }
 
-func taskTypeName(taskType TaskType) string {
-	switch taskType {
-	case TaskCheckEpisodes:
-		return "worker.check_episodes"
-	case TaskSub:
-		return "worker.sub"
-	case TaskRegisterTopic:
-		return "worker.register_topic"
-	case TaskUnsub:
-		return "worker.unsub"
-	case TaskMarkWatched:
-		return "worker.mark_watched"
-	case TaskCheckWatchHistory:
-		return "worker.check_watch_history"
-	case TaskProcessDeletions:
-		return "worker.process_deletions"
-	case TaskUpcoming:
-		return "worker.upcoming"
-	case TaskShows:
-		return "worker.shows"
-	case TaskShowConfig:
-		return "worker.show_config"
-	case TaskToggleDeleteWatched:
-		return "worker.toggle_delete_watched"
-	case TaskTextInput:
-		return "worker.text_input"
-	case TaskPromptCountry:
-		return "worker.prompt_country"
-	case TaskShowTimezones:
-		return "worker.show_timezones"
-	case TaskSetTimezone:
-		return "worker.set_timezone"
-	case TaskUnseen:
-		return "worker.unseen"
-	case TaskShowsPage:
-		return "worker.shows_page"
-	case TaskUpcomingPage:
-		return "worker.upcoming_page"
-	case TaskWhoWatches:
-		return "worker.who_watches"
-	case TaskPromptNotifyHours:
-		return "worker.prompt_notify_hours"
-	case TaskMarkUnwatched:
-		return "worker.mark_unwatched"
-	default:
-		return "worker.unknown"
-	}
-}
-
 // resolveTargetUser determines which user a command is about.
 // Checks username first, then explicit Telegram ID (from a reply),
 // then falls back to the requester's own ID.
@@ -263,4 +214,3 @@ func (w *Worker) consumePendingInput(chatID int64) (pendingInput, bool) {
 	}
 	return input, exists
 }
-

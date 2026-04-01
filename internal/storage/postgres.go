@@ -226,8 +226,8 @@ func (s *PostgresStore) CreateOrUpdateTopic(ctx context.Context, topic *Topic) e
 // Called after a successful token refresh to persist the new credentials.
 func (s *PostgresStore) UpdateUserTokens(ctx context.Context, telegramID int64, accessToken, refreshToken string, expiresAt time.Time) error {
 	result := s.db.WithContext(ctx).Model(&User{}).Where("telegram_id = ?", telegramID).Updates(map[string]any{
-		"trakt_access_token":    accessToken,
-		"trakt_refresh_token":   refreshToken,
+		"trakt_access_token":     accessToken,
+		"trakt_refresh_token":    refreshToken,
 		"trakt_token_expires_at": expiresAt,
 	})
 	if result.Error != nil {
@@ -415,4 +415,3 @@ func (s *PostgresStore) RemoveScheduledDeletion(ctx context.Context, id uint) er
 	}
 	return nil
 }
-
