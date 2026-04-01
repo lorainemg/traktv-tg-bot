@@ -32,6 +32,7 @@ type Service interface {
 	GetUserWatchStatus(notificationID uint, userID uint) (WatchStatus, error)
 	GetUnwatchedStatusesByUser(userID uint) ([]WatchStatus, error)
 	MarkWatchStatus(notificationID uint, userID uint) error
+	UnmarkWatchStatus(notificationID uint, userID uint) error
 
 	// ChatConfig methods - per-chat settings (country, timezone, deletion toggle)
 	GetChatConfig(chatID int64) (*ChatConfig, error)

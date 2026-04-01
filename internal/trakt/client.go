@@ -374,3 +374,35 @@ func (c *Client) MarkEpisodeWatched(token TokenSource, traktShowID, season, epis
 	}
 	return nil
 }
+
+// UnmarkEpisodeWatched removes a specific episode from the user's Trakt watch history.
+// Uses: POST /sync/history/remove - the mirror of /sync/history.
+// Same request body shape, but returns 200 OK instead of 201 Created.
+func (c *Client) UnmarkEpisodeWatched(token TokenSource, traktShowID, season, episodeNumber int) error {
+	// Reuses the same SyncHistoryRequest structure — Trakt identifies the episode
+	// by show ID + season + episode number. WatchedAt is irrelevant for removal.
+	reqBody := SyncHistoryRequest{
+		Shows: []SyncShowEntry{
+			{
+				Ids: SyncShowIDs{Trakt: traktShowID},
+				Seasons: []SyncSeasonEntry{
+					{
+						Number:   season,
+						Episodes: []SyncEpisodeEntry{{Number: episodeNumber}},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := c.do(http.MethodPost, "/sync/history/remove", token, reqBody)
+	if err != nil {
+		return fmt.Errorf("unmarking episode watched: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unmarking episode watched: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}

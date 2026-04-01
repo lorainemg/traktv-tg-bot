@@ -28,6 +28,7 @@ const (
 	TaskUpcomingPage                     // = 17 — paginated /upcoming callback
 	TaskWhoWatches                       // = 18 — check which users watch a show
 	TaskPromptNotifyHours                // = 19 — prompt user for notify window hours
+	TaskMarkUnwatched                    // = 20 — reverse of TaskMarkWatched
 )
 
 // Task represents a unit of work submitted to the worker queue.
@@ -178,9 +179,11 @@ type WhoWatchesPayload struct {
 	Query string // the show name the user typed, e.g. "breaking bad"
 }
 
-// MarkWatchedPayload carries the data needed to mark an episode as watched on Trakt.
+// WatchActionPayload carries the data needed to mark or unmark an episode on Trakt.
+// Shared by both TaskMarkWatched and TaskMarkUnwatched since the data is identical —
+// only the handler logic differs (watched vs unwatched).
 // NotificationID comes directly from the inline button's callback data.
-type MarkWatchedPayload struct {
+type WatchActionPayload struct {
 	TelegramID      int64  // the user who clicked - used to find their Trakt token
 	ChatID          int64  // where to send the confirmation message
 	NotificationID  uint   // DB ID of the notification - used to find which episode

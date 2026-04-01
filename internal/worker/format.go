@@ -210,15 +210,19 @@ func allWatched(statuses []storage.WatchStatus) bool {
 	return true
 }
 
-// watchedButton builds a one-row inline keyboard with a "Mark as Watched" button.
-// The callback data encodes the notification DB ID so the worker knows which episode
-// was clicked. Format: "watched:<id>" - e.g. "watched:42".
-func watchedButton(notificationID uint) [][]InlineButton {
+// watchButtons builds a one-row inline keyboard with both watch action buttons.
+// The callback data encodes the notification DB ID so the worker knows which
+// episode was clicked. Format: "watched:<id>" or "unwatched:<id>".
+func watchButtons(notificationID uint) [][]InlineButton {
 	return [][]InlineButton{
 		{
 			{
-				Text:         "✅ Mark as Watched",
+				Text:         "✅ Watched",
 				CallbackData: fmt.Sprintf("watched:%d", notificationID),
+			},
+			{
+				Text:         "↩️ Unwatched",
+				CallbackData: fmt.Sprintf("unwatched:%d", notificationID),
 			},
 		},
 	}

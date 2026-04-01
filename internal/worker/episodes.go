@@ -170,7 +170,7 @@ func (w *Worker) notifyEpisode(episode chatEpisode, chatID int64, topics []stora
 		ThreadID:      threadID,
 		Text:          msg,
 		PhotoURL:      notification.PhotoURL,
-		InlineButtons: watchedButton(notification.ID),
+		InlineButtons: watchButtons(notification.ID),
 		OnSent: func(messageID int) error {
 			return w.store.UpdateNotificationMessageID(notification.ID, messageID)
 		},

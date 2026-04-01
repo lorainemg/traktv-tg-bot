@@ -335,6 +335,18 @@ func (s *PostgresStore) MarkWatchStatus(notificationID uint, userID uint) error 
 	return nil
 }
 
+// UnmarkWatchStatus sets Watched=false for a specific user on a specific notification.
+// The reverse of MarkWatchStatus — used when a user clicks "Mark as Unwatched".
+func (s *PostgresStore) UnmarkWatchStatus(notificationID uint, userID uint) error {
+	result := s.db.Model(&WatchStatus{}).
+		Where("notification_id = ? AND user_id = ?", notificationID, userID).
+		Update("watched", false)
+	if result.Error != nil {
+		return fmt.Errorf("unmarking watch status for notification %d, user %d: %w", notificationID, userID, result.Error)
+	}
+	return nil
+}
+
 // GetChatConfig retrieves the configuration for a chat.
 // Returns (nil, nil) if no config exists yet - the caller uses defaults.
 func (s *PostgresStore) GetChatConfig(chatID int64) (*ChatConfig, error) {

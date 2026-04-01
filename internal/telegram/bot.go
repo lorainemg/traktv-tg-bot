@@ -213,7 +213,7 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 
 <b>What happens automatically</b>
 • When a new episode airs for a show anyone here follows, I post a notification with details and streaming links
-• Each notification tracks who's watched - click "✅ Mark as Watched" to update your status (this also syncs to your Trakt account)
+• Each notification tracks who's watched - click "✅ Watched" to update your status, or "↩️ Unwatched" to undo it (both sync to your Trakt account)
 • If you watch on Trakt directly, I'll pick that up too
 • Notifications can auto-delete once everyone's watched (toggle via /config)
 
@@ -563,22 +563,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 		return
 	}
 
-	if strings.HasPrefix(cq.Data, "watched:") {
-		notificationID, err := strconv.ParseUint(strings.TrimPrefix(cq.Data, "watched:"), 10, 64)
-		if err != nil {
-			return
-		}
-		b.worker.Submit(worker.Task{
-			Type:     worker.TaskMarkWatched,
-			ChatID:   cq.Message.Message.Chat.ID,
-			ThreadID: cq.Message.Message.MessageThreadID,
-			Payload: worker.MarkWatchedPayload{
-				TelegramID:      cq.From.ID,
-				ChatID:          cq.Message.Message.Chat.ID,
-				NotificationID:  uint(notificationID),
-				CallbackQueryID: cq.ID,
-			},
-		})
+	if strings.HasPrefix(cq.Data, "watched:") || strings.HasPrefix(cq.Data, "unwatched:") {
+		b.handleWatchCallback(cq)
 		return
 	}
 
@@ -591,6 +577,35 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 		b.handlePaginationCallback(cq, worker.TaskUpcomingPage)
 		return
 	}
+}
+
+// handleWatchCallback parses "watched:<id>" and "unwatched:<id>" callbacks
+// and submits the appropriate task. Both share the same payload structure.
+func (b *Bot) handleWatchCallback(cq *models.CallbackQuery) {
+	// Determine direction by checking the prefix, then trim it to get the ID.
+	taskType := worker.TaskMarkWatched
+	idStr := strings.TrimPrefix(cq.Data, "watched:")
+	if strings.HasPrefix(cq.Data, "unwatched:") {
+		taskType = worker.TaskMarkUnwatched
+		idStr = strings.TrimPrefix(cq.Data, "unwatched:")
+	}
+
+	notificationID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return
+	}
+
+	b.worker.Submit(worker.Task{
+		Type:     taskType,
+		ChatID:   cq.Message.Message.Chat.ID,
+		ThreadID: cq.Message.Message.MessageThreadID,
+		Payload: worker.WatchActionPayload{
+			TelegramID:      cq.From.ID,
+			ChatID:          cq.Message.Message.Chat.ID,
+			NotificationID:  uint(notificationID),
+			CallbackQueryID: cq.ID,
+		},
+	})
 }
 
 // handlePaginationCallback parses a pagination callback and submits the

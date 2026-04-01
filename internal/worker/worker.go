@@ -128,6 +128,8 @@ func (w *Worker) process(task Task) {
 		w.handleWhoWatches(task)
 	case TaskPromptNotifyHours:
 		w.handlePromptNotifyHours(task)
+	case TaskMarkUnwatched:
+		w.handleMarkUnwatched(task)
 	default:
 		slog.Warn("unknown task type", "type", task.Type)
 	}
