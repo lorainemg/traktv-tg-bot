@@ -42,6 +42,7 @@ var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
 			Retries = 5,
 			StartPeriod = "2s"
 		};
+		service.Ports.Add("127.0.0.1:5432:5432");
 	});
 
 var database = postgres.AddDatabase("traktdb", databaseName: dbName);
