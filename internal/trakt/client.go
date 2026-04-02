@@ -109,6 +109,7 @@ func (c *Client) do(ctx context.Context, method, path string, token TokenSource,
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			slog.ErrorContext(ctx, "trakt request failed", "method", method, "path", path, "error", err)
 			return nil, err
 		}
 
@@ -126,7 +127,7 @@ func (c *Client) do(ctx context.Context, method, path string, token TokenSource,
 			}
 		}
 
-		slog.Warn("trakt rate limited, retrying",
+		slog.WarnContext(ctx, "trakt rate limited, retrying",
 			"method", method, "path", path, "retry_after_secs", retrySec, "attempt", attempt+1, "max_retries", maxRetries)
 		time.Sleep(time.Duration(retrySec) * time.Second)
 	}

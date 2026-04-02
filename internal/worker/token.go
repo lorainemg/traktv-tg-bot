@@ -41,7 +41,7 @@ func (w *Worker) ensureFreshToken(ctx context.Context, user *storage.User) error
 		return nil
 	}
 
-	slog.Info("refreshing trakt token", "user_id", user.ID, "telegram_id", user.TelegramID)
+	slog.DebugContext(ctx, "refreshing trakt token", "user_id", user.ID, "telegram_id", user.TelegramID)
 
 	token, err := w.trakt.RefreshToken(ctx, user.TraktRefreshToken)
 	if err != nil {
@@ -59,6 +59,6 @@ func (w *Worker) ensureFreshToken(ctx context.Context, user *storage.User) error
 	user.TraktRefreshToken = token.RefreshToken
 	user.TraktTokenExpiresAt = expiresAt
 
-	slog.Info("trakt token refreshed", "user_id", user.ID, "expires_at", expiresAt)
+	slog.DebugContext(ctx, "trakt token refreshed", "user_id", user.ID, "expires_at", expiresAt)
 	return nil
 }

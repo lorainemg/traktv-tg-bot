@@ -17,13 +17,14 @@ import (
 func (w *Worker) handleSub(task Task) {
 	payload, ok := task.Payload.(SubPayload)
 	if !ok {
-		slog.Error("invalid payload for TaskSub")
+		slog.WarnContext(task.Ctx, "invalid payload for TaskSub")
 		return
 	}
+	slog.InfoContext(task.Ctx, "processing sub request", "telegram_id", payload.TelegramID)
 
 	existing, err := w.store.GetUserByTelegramID(task.Ctx, payload.TelegramID)
 	if err != nil {
-		slog.Error("failed to look up existing user", "error", err)
+		slog.ErrorContext(task.Ctx, "failed to look up existing user", "error", err)
 		w.results <- task.TextResult("Something went wrong. Please try again.")
 		return
 	}
@@ -33,12 +34,14 @@ func (w *Worker) handleSub(task Task) {
 		// Update names on every /sub - catches Telegram display name changes.
 		err = w.store.UpdateUserNames(task.Ctx, payload.TelegramID, payload.FirstName, payload.Username)
 		if err != nil {
-			slog.Error("failed to update user names", "error", err)
+			slog.ErrorContext(task.Ctx, "failed to update user names", "error", err)
 		}
 	} else {
 		w.handleNewUserSub(task, payload)
 		// For new users, names are saved inside pollForToken when the record is created.
 	}
+
+	slog.InfoContext(task.Ctx, "sub request handled", "existing_user", existing != nil)
 }
 
 // handleExistingUserSub handles /sub when the user already has Trakt tokens.
@@ -54,7 +57,7 @@ func (w *Worker) handleExistingUserSub(task Task, payload SubPayload, existing *
 			Text:   fmt.Sprintf("%s has moved their notifications to another chat. Their notifications will no longer be sent here.", existing.MentionLink()),
 		}
 		if err := w.store.UpdateUserChatID(task.Ctx, payload.TelegramID, task.ChatID); err != nil {
-			slog.Error("failed to update user chat ID", "error", err)
+			slog.ErrorContext(task.Ctx, "failed to update user chat ID", "error", err)
 			w.results <- task.TextResult("Failed to move notifications. Please try again.")
 			return
 		}
@@ -62,7 +65,7 @@ func (w *Worker) handleExistingUserSub(task Task, payload SubPayload, existing *
 
 	if existing.Muted {
 		if err := w.store.UpdateUserMuted(task.Ctx, payload.TelegramID, false); err != nil {
-			slog.Error("failed to unmute user", "error", err)
+			slog.ErrorContext(task.Ctx, "failed to unmute user", "error", err)
 			w.results <- task.TextResult("Failed to re-subscribe. Please try again.")
 			return
 		}
@@ -82,7 +85,7 @@ func (w *Worker) handleExistingUserSub(task Task, payload SubPayload, existing *
 func (w *Worker) handleNewUserSub(task Task, payload SubPayload) {
 	dc, err := w.trakt.RequestDeviceCode(task.Ctx)
 	if err != nil {
-		slog.Error("failed to request device code", "error", err)
+		slog.ErrorContext(task.Ctx, "failed to request device code", "error", err)
 		w.results <- task.TextResult("Failed to start Trakt auth. Please try again.")
 		return
 	}
@@ -138,7 +141,7 @@ func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, p
 				TraktTokenExpiresAt: expiresAt,
 			})
 			if err != nil {
-				slog.Error("failed to save user", "error", err)
+				slog.ErrorContext(ctx, "failed to save user", "error", err)
 				w.results <- t.TextResult("Failed to save Trakt account. Please try again.")
 				return
 			}

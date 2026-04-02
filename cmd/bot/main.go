@@ -15,6 +15,10 @@ import (
 	// the embedded data with the time package, similar to Python's import-for-side-effects pattern.
 	_ "time/tzdata"
 
+	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel/attribute"
+	logglobal "go.opentelemetry.io/otel/log/global"
+
 	"github.com/loraine/traktv-tg-bot/internal/otel"
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/telegram"
@@ -110,6 +114,25 @@ func setupLogger() {
 	}
 }
 
+// setupTelemetryLogger routes slog records into OpenTelemetry Logs,
+// so Aspire can correlate structured logs with traces.
+func setupTelemetryLogger(serviceName string) {
+	env := strings.ToLower(os.Getenv("ENV"))
+	if env == "" {
+		env = "unknown"
+	}
+
+	logger := otelslog.NewLogger(serviceName,
+		otelslog.WithLoggerProvider(logglobal.GetLoggerProvider()),
+		otelslog.WithSource(strings.HasPrefix(env, "dev")),
+		otelslog.WithAttributes(
+			attribute.String("deployment.environment", env),
+		),
+	)
+
+	slog.SetDefault(logger)
+}
+
 func main() {
 	setupLogger()
 
@@ -147,6 +170,10 @@ func main() {
 		slog.Error("failed to initialize OpenTelemetry", "error", err)
 		os.Exit(1)
 	}
+
+	setupTelemetryLogger("bot")
+	slog.Info("open telemetry traces and logs initialized")
+
 	defer func() {
 		if err := shutdownTelemetry(context.Background()); err != nil {
 			slog.Error("failed to shutdown OpenTelemetry", "error", err)

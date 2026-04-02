@@ -19,11 +19,11 @@ type chatEpisode struct {
 // It iterates per chat (not per user) because notifications are scoped to chats -
 // one notification per episode per chat, regardless of how many users follow the show.
 func (w *Worker) handleCheckEpisodes(task Task) {
-	slog.Info("checking for new episodes")
+	slog.DebugContext(task.Ctx, "checking for new episodes")
 
 	chatIDs, err := w.store.GetDistinctChatIDs(task.Ctx)
 	if err != nil {
-		slog.Error("failed to fetch chat IDs", "error", err)
+		slog.ErrorContext(task.Ctx, "failed to fetch chat IDs", "error", err)
 		return
 	}
 
@@ -32,11 +32,13 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 	for _, chatID := range chatIDs {
 		users, err := w.store.GetUsersByChatID(task.Ctx, chatID)
 		if err != nil {
-			slog.Error("failed to fetch users for chat", "chat_id", chatID, "error", err)
+			slog.ErrorContext(task.Ctx, "failed to fetch users for chat", "chat_id", chatID, "error", err)
 			continue // non-fatal - skip this chat and try the next one
 		}
 		w.checkChatEpisodes(task, chatID, users, today)
 	}
+
+	slog.DebugContext(task.Ctx, "episode check completed", "chat_count", len(chatIDs))
 }
 
 // checkChatEpisodes collects episodes from all users in a chat, deduplicates them,
@@ -45,21 +47,21 @@ func (w *Worker) handleCheckEpisodes(task Task) {
 func (w *Worker) checkChatEpisodes(task Task, chatID int64, users []storage.User, day string) {
 	settings, err := w.loadChatSettings(task.Ctx, chatID)
 	if err != nil {
-		slog.Error("failed to load chat settings", "error", err, "chat_id", chatID)
+		slog.ErrorContext(task.Ctx, "failed to load chat settings", "error", err, "chat_id", chatID)
 		return
 	}
 
 	// Fetch registered forum topics once for the whole chat
 	topics, err := w.store.GetTopics(task.Ctx, chatID)
 	if err != nil {
-		slog.Error("failed to fetch topics", "error", err)
+		slog.ErrorContext(task.Ctx, "failed to fetch topics", "error", err, "chat_id", chatID)
 		// Non-fatal - notifications will go to General
 		topics = nil
 	}
 
 	episodes := w.collectChatEpisodes(task, users, day, settings.notifyHours)
 
-	slog.Info("found episodes for chat", "count", len(episodes), "chat_id", chatID)
+	slog.DebugContext(task.Ctx, "found episodes for chat", "count", len(episodes), "chat_id", chatID)
 
 	// Send a notification for each unique episode
 	for _, episode := range episodes {
@@ -68,7 +70,7 @@ func (w *Worker) checkChatEpisodes(task Task, chatID int64, users []storage.User
 		if tmdbID != 0 {
 			watchInfo, err = w.tmdb.GetWatchProviders(task.Ctx, tmdbID, settings.country)
 			if err != nil {
-				slog.Error("failed to fetch watch providers", "show", episode.entry.Show.Title, "error", err)
+				slog.ErrorContext(task.Ctx, "failed to fetch watch providers", "show", episode.entry.Show.Title, "error", err)
 			}
 		}
 		w.notifyEpisode(task, episode, chatID, topics, watchInfo, settings.location)
@@ -90,7 +92,7 @@ func (w *Worker) collectChatEpisodes(task Task, users []storage.User, day string
 
 		watchlistShows, err := w.trakt.GetWatchlistShows(task.Ctx, token)
 		if err != nil {
-			slog.Error("failed to fetch watchlist", "user_id", user.ID, "error", err)
+			slog.ErrorContext(task.Ctx, "failed to fetch watchlist", "user_id", user.ID, "error", err)
 			// Non-fatal - proceed without filtering (nil map reads return zero values safely)
 			watchlistShows = nil
 		}
@@ -100,7 +102,7 @@ func (w *Worker) collectChatEpisodes(task Task, users []storage.User, day string
 		calendarDays := notifyHours/24 + 1
 		entries, err := w.trakt.GetCalendar(task.Ctx, token, day, calendarDays)
 		if err != nil {
-			slog.Error("failed to fetch calendar", "user_id", user.ID, "error", err)
+			slog.ErrorContext(task.Ctx, "failed to fetch calendar", "user_id", user.ID, "error", err)
 			continue
 		}
 
@@ -139,7 +141,7 @@ func (w *Worker) notifyEpisode(task Task, episode chatEpisode, chatID int64, top
 	entry := episode.entry
 	hasNotification, err := w.store.HasNotification(task.Ctx, chatID, entry.Show.Title, entry.Episode.Season, entry.Episode.Number)
 	if err != nil {
-		slog.Error("failed to check notification", "error", err)
+		slog.ErrorContext(task.Ctx, "failed to check notification", "error", err, "chat_id", chatID)
 		return
 	}
 	if hasNotification {
@@ -154,7 +156,7 @@ func (w *Worker) notifyEpisode(task Task, episode chatEpisode, chatID int64, top
 
 	// Record the notification so we don't send it again
 	if err := w.store.CreateNotification(task.Ctx, &notification); err != nil {
-		slog.Error("failed to save notification", "error", err)
+		slog.ErrorContext(task.Ctx, "failed to save notification", "error", err, "chat_id", chatID)
 		return
 	}
 
@@ -184,13 +186,13 @@ func (w *Worker) notifyEpisode(task Task, episode chatEpisode, chatID int64, top
 // fails - the notification still goes out, just without the status line.
 func (w *Worker) createAndFormatWatchStatuses(ctx context.Context, notificationID uint, userIDs []uint) string {
 	if err := w.store.CreateWatchStatuses(ctx, notificationID, userIDs); err != nil {
-		slog.Error("failed to create watch statuses", "error", err)
+		slog.ErrorContext(ctx, "failed to create watch statuses", "error", err)
 		return ""
 	}
 
 	statuses, err := w.store.GetWatchStatuses(ctx, notificationID)
 	if err != nil {
-		slog.Error("failed to fetch watch statuses", "error", err)
+		slog.ErrorContext(ctx, "failed to fetch watch statuses", "error", err)
 		return ""
 	}
 

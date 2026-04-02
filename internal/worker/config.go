@@ -26,7 +26,7 @@ const (
 func (w *Worker) handleShowConfig(task Task) {
 	config, err := w.store.GetChatConfig(task.Ctx, task.ChatID)
 	if err != nil {
-		slog.Error("failed to fetch chat config", "error", err, "chat_id", task.ChatID)
+		slog.ErrorContext(task.Ctx, "failed to fetch chat config", "error", err, "chat_id", task.ChatID)
 		w.results <- task.TextResult("Something went wrong, please try again.")
 		return
 	}
@@ -40,13 +40,13 @@ func (w *Worker) handleShowConfig(task Task) {
 func (w *Worker) handleToggleDeleteWatched(task Task) {
 	payload, ok := task.Payload.(ConfigCallbackPayload)
 	if !ok {
-		slog.Error("invalid payload for TaskToggleDeleteWatched")
+		slog.WarnContext(task.Ctx, "invalid payload for TaskToggleDeleteWatched")
 		return
 	}
 
 	config, err := w.store.GetChatConfig(task.Ctx, payload.ChatID)
 	if err != nil {
-		slog.Error("failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(task.Ctx, "failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (w *Worker) handleToggleDeleteWatched(task Task) {
 		NotifyHours:   notifyHours,
 	})
 	if err != nil {
-		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(task.Ctx, "failed to save chat config", "error", err, "chat_id", payload.ChatID)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (w *Worker) handleToggleDeleteWatched(task Task) {
 func (w *Worker) handlePromptCountry(task Task) {
 	payload, ok := task.Payload.(ConfigCallbackPayload)
 	if !ok {
-		slog.Error("invalid payload for config:country")
+		slog.WarnContext(task.Ctx, "invalid payload for config:country")
 		return
 	}
 
@@ -112,7 +112,7 @@ func (w *Worker) handlePromptCountry(task Task) {
 func (w *Worker) handlePromptNotifyHours(task Task) {
 	payload, ok := task.Payload.(ConfigCallbackPayload)
 	if !ok {
-		slog.Error("invalid payload for config:notify")
+		slog.WarnContext(task.Ctx, "invalid payload for config:notify")
 		return
 	}
 
@@ -140,13 +140,13 @@ func (w *Worker) handlePromptNotifyHours(task Task) {
 func (w *Worker) handleShowTimezones(task Task) {
 	payload, ok := task.Payload.(ConfigCallbackPayload)
 	if !ok {
-		slog.Error("invalid payload for TaskShowTimezones")
+		slog.WarnContext(task.Ctx, "invalid payload for TaskShowTimezones")
 		return
 	}
 
 	config, err := w.store.GetChatConfig(task.Ctx, payload.ChatID)
 	if err != nil {
-		slog.Error("failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(task.Ctx, "failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
 		return
 	}
 
@@ -168,7 +168,7 @@ func (w *Worker) handleShowTimezones(task Task) {
 			NotifyHours:   notifyHours,
 		})
 		if err != nil {
-			slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
+			slog.ErrorContext(task.Ctx, "failed to save chat config", "error", err, "chat_id", payload.ChatID)
 			return
 		}
 
@@ -202,13 +202,13 @@ func (w *Worker) handleShowTimezones(task Task) {
 func (w *Worker) handleSetTimezone(task Task) {
 	payload, ok := task.Payload.(TimezonePayload)
 	if !ok {
-		slog.Error("invalid payload for TaskSetTimezone")
+		slog.WarnContext(task.Ctx, "invalid payload for TaskSetTimezone")
 		return
 	}
 
 	config, err := w.store.GetChatConfig(task.Ctx, payload.ChatID)
 	if err != nil {
-		slog.Error("failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(task.Ctx, "failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
 		return
 	}
 
@@ -222,7 +222,7 @@ func (w *Worker) handleSetTimezone(task Task) {
 		NotifyHours:   notifyHours,
 	})
 	if err != nil {
-		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(task.Ctx, "failed to save chat config", "error", err, "chat_id", payload.ChatID)
 		return
 	}
 
@@ -236,7 +236,7 @@ func (w *Worker) handleSetTimezone(task Task) {
 func (w *Worker) handleTextInput(task Task) {
 	payload, ok := task.Payload.(TextInputPayload)
 	if !ok {
-		slog.Error("invalid payload for TaskTextInput")
+		slog.WarnContext(task.Ctx, "invalid payload for TaskTextInput")
 		return
 	}
 
@@ -271,7 +271,7 @@ func (w *Worker) handleCountryInput(ctx context.Context, threadID int, payload T
 	// Load current config to preserve other settings
 	config, err := w.store.GetChatConfig(ctx, payload.ChatID)
 	if err != nil {
-		slog.Error("failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(ctx, "failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
 		return
 	}
 
@@ -285,7 +285,7 @@ func (w *Worker) handleCountryInput(ctx context.Context, threadID int, payload T
 		NotifyHours:   notifyHours,
 	})
 	if err != nil {
-		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(ctx, "failed to save chat config", "error", err, "chat_id", payload.ChatID)
 		w.results <- Result{Ctx: ctx, ChatID: payload.ChatID, ThreadID: threadID, Text: "Something went wrong, please try again."}
 		return
 	}
@@ -304,7 +304,7 @@ func (w *Worker) handleNotifyHoursInput(ctx context.Context, threadID int, paylo
 	// Load current config to preserve other settings
 	config, err := w.store.GetChatConfig(ctx, payload.ChatID)
 	if err != nil {
-		slog.Error("failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(ctx, "failed to fetch chat config", "error", err, "chat_id", payload.ChatID)
 		return
 	}
 
@@ -318,7 +318,7 @@ func (w *Worker) handleNotifyHoursInput(ctx context.Context, threadID int, paylo
 		NotifyHours:   hours,
 	})
 	if err != nil {
-		slog.Error("failed to save chat config", "error", err, "chat_id", payload.ChatID)
+		slog.ErrorContext(ctx, "failed to save chat config", "error", err, "chat_id", payload.ChatID)
 		w.results <- Result{Ctx: ctx, ChatID: payload.ChatID, ThreadID: threadID, Text: "Something went wrong, please try again."}
 		return
 	}
@@ -350,7 +350,7 @@ func (w *Worker) loadChatSettings(ctx context.Context, chatID int64) (chatSettin
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
 		// Invalid timezone in DB - fall back to default rather than breaking
-		slog.Warn("invalid timezone in config, using default", "timezone", tzName, "chat_id", chatID)
+		slog.WarnContext(ctx, "invalid timezone in config, using default", "timezone", tzName, "chat_id", chatID)
 		loc = defaultTimezone
 	}
 

@@ -35,7 +35,7 @@ type Worker struct {
 	tasks   chan Task       // input queue - other packages send tasks here
 	results chan Result     // output queue - worker sends messages to deliver here
 	store   storage.Service // database operations (the interface, not the concrete type)
-	trakt   trakt.Service   // Trakt API operations (interface — concrete *Client or a test mock)
+	trakt   *trakt.Client   // Trakt API client
 	tmdb    *tmdb.Client    // TMDB API client - used for watch provider lookups
 
 	// pendingInputs tracks chats where the worker expects text input.
@@ -50,7 +50,7 @@ type Worker struct {
 // New creates a Worker with buffered channels of the given size.
 // bufferSize controls how many tasks/results can queue up before
 // the sender blocks - like queue.Queue(maxsize=N) in Python.
-func New(store storage.Service, traktClient trakt.Service, tmdbClient *tmdb.Client, bufferSize int) *Worker {
+func New(store storage.Service, traktClient *trakt.Client, tmdbClient *tmdb.Client, bufferSize int) *Worker {
 	return &Worker{
 		tasks:         make(chan Task, bufferSize),
 		results:       make(chan Result, bufferSize),
@@ -96,7 +96,9 @@ func (w *Worker) Run(ctx context.Context) {
 			)
 			task.Ctx = taskCtx
 			// A task arrived - dispatch it to the right handler.
-			w.process(task)
+			if !w.process(task) {
+				slog.WarnContext(task.Ctx, "worker task not handled", "task_type", task.Type.String())
+			}
 			span.End()
 		case <-ctx.Done():
 			// Shutdown signal received - exit the loop cleanly.
@@ -107,7 +109,7 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 // process dispatches a task to the appropriate handler based on its type.
-func (w *Worker) process(task Task) {
+func (w *Worker) process(task Task) bool {
 	switch task.Type {
 	case TaskCheckEpisodes:
 		w.handleCheckEpisodes(task)
@@ -152,8 +154,11 @@ func (w *Worker) process(task Task) {
 	case TaskMarkUnwatched:
 		w.handleMarkUnwatched(task)
 	default:
-		slog.Warn("unknown task type", "type", task.Type)
+		slog.WarnContext(task.Ctx, "unknown task type", "type", task.Type)
+		return false
 	}
+
+	return true
 }
 
 // resolveTargetUser determines which user a command is about.
