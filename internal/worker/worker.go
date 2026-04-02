@@ -96,9 +96,7 @@ func (w *Worker) Run(ctx context.Context) {
 			)
 			task.Ctx = taskCtx
 			// A task arrived - dispatch it to the right handler.
-			if !w.process(task) {
-				slog.WarnContext(task.Ctx, "worker task not handled", "task_type", task.Type.String())
-			}
+			w.process(task)
 			span.End()
 		case <-ctx.Done():
 			// Shutdown signal received - exit the loop cleanly.
@@ -109,7 +107,7 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 // process dispatches a task to the appropriate handler based on its type.
-func (w *Worker) process(task Task) bool {
+func (w *Worker) process(task Task) {
 	switch task.Type {
 	case TaskCheckEpisodes:
 		w.handleCheckEpisodes(task)
@@ -155,10 +153,7 @@ func (w *Worker) process(task Task) bool {
 		w.handleMarkUnwatched(task)
 	default:
 		slog.WarnContext(task.Ctx, "unknown task type", "type", task.Type)
-		return false
 	}
-
-	return true
 }
 
 // resolveTargetUser determines which user a command is about.
