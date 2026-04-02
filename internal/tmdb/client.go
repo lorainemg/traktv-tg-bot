@@ -16,6 +16,7 @@ const baseURL = "https://api.themoviedb.org/3"
 // Client handles communication with the TMDB API.
 type Client struct {
 	apiKey     string       // TMDB API key (v3 auth)
+	baseURL    string       // API base URL, defaults to TMDB production
 	httpClient *http.Client // reusable HTTP client, same idea as in the Trakt client
 }
 
@@ -23,6 +24,7 @@ type Client struct {
 func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:     apiKey,
+		baseURL:    baseURL,
 		httpClient: &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 }
@@ -38,7 +40,7 @@ func closeBody(body io.ReadCloser) {
 // tmdbID is the show's TMDB numeric ID, countryCode is e.g. "US", "GB".
 // Returns nil (not an error) if no providers are found for that country.
 func (c *Client) GetWatchProviders(ctx context.Context, tmdbID int, countryCode string) (*WatchInfo, error) {
-	url := fmt.Sprintf("%s/tv/%d/watch/providers?api_key=%s", baseURL, tmdbID, c.apiKey)
+	url := fmt.Sprintf("%s/tv/%d/watch/providers?api_key=%s", c.baseURL, tmdbID, c.apiKey)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
