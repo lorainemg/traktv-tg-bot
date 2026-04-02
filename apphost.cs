@@ -29,7 +29,7 @@ var traktClientSecret = builder.AddParameter("trakt-client-secret", secret: true
 var tmdbApiKey = builder.AddParameter("tmdb-api-key");
 var env = builder.ExecutionContext.IsRunMode ? "dev" : "prod";
 
-var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
+var postgres = builder.AddPostgres("postgres", dbUser, dbPassword, 5432)
 	.WithImageTag("17-alpine")
 	.WithEnvironment("POSTGRES_DB", dbName)
 	.WithDataVolume()
@@ -49,6 +49,7 @@ var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
 var database = postgres.AddDatabase("traktdb", databaseName: dbName);
 
 var bot = builder.AddDockerfile("bot", ".", "./Dockerfile", env)
+    .WithOtlpExporter()
 	.WithReference(database)
 	.WithEnvironment("TELEGRAM_BOT_TOKEN", telegramBotToken)
 	.WithEnvironment("TRAKT_CLIENT_ID", traktClientId)

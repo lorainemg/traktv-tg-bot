@@ -154,7 +154,7 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 	}
 	msg, err := b.bot.SendMessage(resultCtx(result), params)
 	if err != nil {
-		slog.Error("failed to send message", "error", err, "chat_id", result.ChatID)
+		slog.Error("failed to send message", "error", err, "chat_id", result.ChatID, "text", result.Text)
 		return
 	}
 
@@ -202,7 +202,7 @@ func (b *Bot) editResultsMessage(result worker.Result) {
 		if strings.Contains(err.Error(), "message is not modified") {
 			return
 		}
-		slog.Error("failed to edit message", "error", err, "chat_id", result.ChatID, "message_id", result.EditMessageID)
+		slog.Error("failed to edit message", "error", err, "chat_id", result.ChatID, "message_id", result.EditMessageID, "text", result.Text)
 	}
 }
 

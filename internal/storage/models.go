@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -10,15 +11,15 @@ import (
 // User represents a Telegram user who has linked their Trakt.tv account.
 // GORM maps this struct to a "users" table automatically.
 type User struct {
-	gorm.Model              // embeds ID, CreatedAt, UpdatedAt, DeletedAt
-	TelegramID        int64 `gorm:"uniqueIndex"`
-	FirstName         string
-	Username          string
-	ChatID            int64 // Telegram chat where this user authenticated
-	TraktAccessToken  string
-	TraktRefreshToken string
+	gorm.Model                // embeds ID, CreatedAt, UpdatedAt, DeletedAt
+	TelegramID          int64 `gorm:"uniqueIndex"`
+	FirstName           string
+	Username            string
+	ChatID              int64 // Telegram chat where this user authenticated
+	TraktAccessToken    string
+	TraktRefreshToken   string
 	TraktTokenExpiresAt time.Time // when the access token expires - used to trigger refresh
-	Muted             bool // when true, the user won't receive episode notifications
+	Muted               bool      // when true, the user won't receive episode notifications
 }
 
 // MentionLink returns a clickable Markdown mention for this user.
@@ -33,6 +34,18 @@ func (u *User) MentionLink() string {
 		name = "User"
 	}
 	return fmt.Sprintf("[%s](tg://user?id=%d)", name, u.TelegramID)
+}
+
+// Mention returns a plain @username (with underscores escaped for MarkdownV1)
+// or falls back to a clickable link for users without a username.
+func (u *User) Mention() string {
+	if u.Username != "" {
+		// Telegram usernames can contain underscores, which MarkdownV1 parses
+		// as italic markers. Escaping with backslash prevents that.
+		escaped := strings.ReplaceAll(u.Username, "_", "\\_")
+		return fmt.Sprintf("@%s", escaped)
+	}
+	return u.MentionLink()
 }
 
 // Topic maps a Telegram forum topic (thread) to a name for routing notifications.
@@ -96,8 +109,8 @@ type ChatConfig struct {
 	ChatID        int64  `gorm:"uniqueIndex"` // one config per chat
 	Country       string // ISO 3166-1 alpha-2 country code, e.g. "US", "GB"
 	Timezone      string // IANA timezone, e.g. "America/New_York"
-	DeleteWatched bool // when true, delete episode messages after all users have watched
-	NotifyHours   int  // how many hours before air time to include in notifications (0 = use default)
+	DeleteWatched bool   // when true, delete episode messages after all users have watched
+	NotifyHours   int    // how many hours before air time to include in notifications (0 = use default)
 }
 
 // WatchStatus tracks whether a specific user has watched a notified episode.

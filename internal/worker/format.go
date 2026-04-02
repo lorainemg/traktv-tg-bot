@@ -171,7 +171,7 @@ func formatWatchedByLine(statuses []storage.WatchStatus, haveAllWatched bool) st
 		if status.Watched {
 			icon = "✅"
 		}
-		usersInfo[i] = fmt.Sprintf("%s %s", status.User.MentionLink(), icon)
+		usersInfo[i] = fmt.Sprintf("%s %s", status.User.Mention(), icon)
 	}
 	return fmt.Sprintf("Watched by: %s", strings.Join(usersInfo, "  "))
 }
