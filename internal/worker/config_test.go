@@ -6,6 +6,7 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/mocks"
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestResolveConfig(t *testing.T) {
@@ -47,7 +48,7 @@ func TestResolveConfig(t *testing.T) {
 func TestHandleShowConfig(t *testing.T) {
 	t.Run("sends config with defaults when no config exists", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetChatConfig", int64(42)).Return(nil, nil)
+		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -70,7 +71,7 @@ func TestHandleShowConfig(t *testing.T) {
 			DeleteWatched: false,
 			NotifyHours:   24,
 		}
-		store.On("GetChatConfig", int64(42)).Return(config, nil)
+		store.On("GetChatConfig", mock.Anything, int64(42)).Return(config, nil)
 
 		w := newTestWorker(store, nil)
 

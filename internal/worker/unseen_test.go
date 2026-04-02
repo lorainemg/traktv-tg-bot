@@ -56,7 +56,7 @@ func TestCollectUnseenShows(t *testing.T) {
 func TestHandleUnseen(t *testing.T) {
 	t.Run("sends auth prompt when user not found", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetUserByTelegramID", int64(111)).Return(nil, nil)
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(nil, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -75,7 +75,7 @@ func TestHandleUnseen(t *testing.T) {
 	t.Run("sends muted message when user is unsubscribed", func(t *testing.T) {
 		store := &mocks.MockStore{}
 		user := &storage.User{TelegramID: 111, Username: "loraine", Muted: true}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -100,8 +100,8 @@ func TestHandleUnseen(t *testing.T) {
 			TraktAccessToken:    "token123",
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		traktMock.On("GetWatchedShows", mock.AnythingOfType("trakt.TokenSource")).Return(
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		traktMock.On("GetWatchedShows", mock.Anything, mock.AnythingOfType("trakt.TokenSource")).Return(
 			[]trakt.WatchedShowEntry{
 				{Plays: 10, Show: trakt.Show{Title: "Severance", AiredEpisodes: 10}},
 			}, nil,
@@ -126,8 +126,8 @@ func TestHandleUnseen(t *testing.T) {
 		store := &mocks.MockStore{}
 		traktMock := &mocks.MockTrakt{}
 		user := &storage.User{TelegramID: 111, Username: "loraine"}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		traktMock.On("GetWatchedShows", mock.AnythingOfType("trakt.TokenSource")).Return(
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		traktMock.On("GetWatchedShows", mock.Anything, mock.AnythingOfType("trakt.TokenSource")).Return(
 			[]trakt.WatchedShowEntry{
 				{Plays: 8, Show: trakt.Show{Title: "Severance", IDs: trakt.ShowIDs{Slug: "severance"}, AiredEpisodes: 10}},
 			}, nil,

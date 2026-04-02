@@ -15,7 +15,7 @@ func TestHandleRegisterTopic(t *testing.T) {
 		store := &mocks.MockStore{}
 		// mock.MatchedBy lets us assert on the argument passed to CreateOrUpdateTopic
 		// without matching the exact pointer. We check the fields instead.
-		store.On("CreateOrUpdateTopic", mock.MatchedBy(func(topic *storage.Topic) bool {
+		store.On("CreateOrUpdateTopic", mock.Anything, mock.MatchedBy(func(topic *storage.Topic) bool {
 			return topic.ChatID == 42 && topic.ThreadID == 10 && topic.Name == "anime"
 		})).Return(nil)
 
@@ -38,7 +38,7 @@ func TestHandleRegisterTopic(t *testing.T) {
 
 	t.Run("sends error when DB write fails", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("CreateOrUpdateTopic", mock.Anything).Return(fmt.Errorf("db error"))
+		store.On("CreateOrUpdateTopic", mock.Anything, mock.Anything).Return(fmt.Errorf("db error"))
 
 		w := newTestWorker(store, nil)
 

@@ -71,7 +71,7 @@ func TestFormatShowsMessage(t *testing.T) {
 func TestHandleShows(t *testing.T) {
 	t.Run("sends auth prompt when user not found", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetUserByTelegramID", int64(111)).Return(nil, nil)
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(nil, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -95,8 +95,8 @@ func TestHandleShows(t *testing.T) {
 			TraktAccessToken:    "token123",
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		traktMock.On("GetWatchedShows", mock.AnythingOfType("trakt.TokenSource")).Return(
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		traktMock.On("GetWatchedShows", mock.Anything, mock.AnythingOfType("trakt.TokenSource")).Return(
 			[]trakt.WatchedShowEntry{
 				{Show: trakt.Show{Title: "Breaking Bad", Status: trakt.ShowStatusEnded}},
 			}, nil,
@@ -124,8 +124,8 @@ func TestHandleShows(t *testing.T) {
 			TraktAccessToken:    "token123",
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		traktMock.On("GetWatchedShows", mock.AnythingOfType("trakt.TokenSource")).Return(
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		traktMock.On("GetWatchedShows", mock.Anything, mock.AnythingOfType("trakt.TokenSource")).Return(
 			[]trakt.WatchedShowEntry{
 				{Show: trakt.Show{Title: "Severance", Status: trakt.ShowStatusReturning, IDs: trakt.ShowIDs{Slug: "severance"}}},
 				{Show: trakt.Show{Title: "The Bear", Status: trakt.ShowStatusReturning, IDs: trakt.ShowIDs{Slug: "the-bear"}}},
@@ -157,7 +157,7 @@ func TestHandleShows(t *testing.T) {
 			TraktAccessToken:    "token123",
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 		entries := make([]trakt.WatchedShowEntry, 25)
 		for i := range entries {
 			entries[i] = trakt.WatchedShowEntry{
@@ -167,7 +167,7 @@ func TestHandleShows(t *testing.T) {
 				},
 			}
 		}
-		traktMock.On("GetWatchedShows", mock.AnythingOfType("trakt.TokenSource")).Return(entries, nil)
+		traktMock.On("GetWatchedShows", mock.Anything, mock.AnythingOfType("trakt.TokenSource")).Return(entries, nil)
 
 		w := newTestWorker(store, traktMock)
 

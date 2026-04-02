@@ -41,7 +41,7 @@ func TestHandleMarkWatched(t *testing.T) {
 			Model:      gorm.Model{ID: 1},
 			FirstAired: time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 		}
-		store.On("GetNotificationByID", uint(1)).Return(futureNotification, nil)
+		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(futureNotification, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -58,11 +58,11 @@ func TestHandleMarkWatched(t *testing.T) {
 
 	t.Run("rejects if user is not following the show", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetNotificationByID", uint(1)).Return(airedNotification(), nil)
+		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(airedNotification(), nil)
 		user := &storage.User{TelegramID: 111, Username: "loraine"}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 		// Zero ID means no watch status found — user isn't following
-		store.On("GetUserWatchStatus", uint(1), uint(0)).Return(storage.WatchStatus{}, nil)
+		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{}, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -78,11 +78,11 @@ func TestHandleMarkWatched(t *testing.T) {
 
 	t.Run("rejects if already watched", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetNotificationByID", uint(1)).Return(airedNotification(), nil)
+		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(airedNotification(), nil)
 		user := &storage.User{TelegramID: 111, Username: "loraine"}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 		// Already watched — expectWatched is false for MarkWatched, so mismatch
-		store.On("GetUserWatchStatus", uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: true,
 		}, nil)
@@ -104,7 +104,7 @@ func TestHandleMarkWatched(t *testing.T) {
 		traktMock := &mocks.MockTrakt{}
 
 		notification := airedNotification()
-		store.On("GetNotificationByID", uint(1)).Return(notification, nil)
+		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(notification, nil)
 
 		user := &storage.User{
 			TelegramID:          111,
@@ -112,25 +112,25 @@ func TestHandleMarkWatched(t *testing.T) {
 			TraktAccessToken:    "token",
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: false, // not yet watched — matches expectWatched=false
 		}, nil)
 
 		// Trakt API call to mark watched
-		traktMock.On("MarkEpisodeWatched", mock.Anything, 100, 2, 5).Return(nil)
+		traktMock.On("MarkEpisodeWatched", mock.Anything, mock.Anything, 100, 2, 5).Return(nil)
 		// DB update
-		store.On("MarkWatchStatus", uint(1), uint(0)).Return(nil)
+		store.On("MarkWatchStatus", mock.Anything, uint(1), uint(0)).Return(nil)
 
 		// refreshNotificationMessage calls: GetChatConfig, GetWatchStatuses
 		// nil config → defaults (deleteWatched=true), so when allWatched=true
 		// it also calls CreateScheduledDeletion
-		store.On("GetChatConfig", int64(42)).Return(nil, nil)
-		store.On("GetWatchStatuses", uint(1)).Return([]storage.WatchStatus{
+		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
+		store.On("GetWatchStatuses", mock.Anything, uint(1)).Return([]storage.WatchStatus{
 			{Watched: true, User: storage.User{Username: "loraine"}},
 		}, nil)
-		store.On("CreateScheduledDeletion", mock.Anything).Return(nil)
+		store.On("CreateScheduledDeletion", mock.Anything, mock.Anything).Return(nil)
 
 		// Buffer 2: callback answer + edited notification message
 		w := New(store, traktMock, nil, 2)
@@ -160,18 +160,18 @@ func TestHandleMarkWatched(t *testing.T) {
 		store := &mocks.MockStore{}
 		traktMock := &mocks.MockTrakt{}
 
-		store.On("GetNotificationByID", uint(1)).Return(airedNotification(), nil)
+		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(airedNotification(), nil)
 		user := &storage.User{
 			TelegramID:          111,
 			TraktAccessToken:    "token",
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: false,
 		}, nil)
-		traktMock.On("MarkEpisodeWatched", mock.Anything, 100, 2, 5).Return(fmt.Errorf("trakt 500"))
+		traktMock.On("MarkEpisodeWatched", mock.Anything, mock.Anything, 100, 2, 5).Return(fmt.Errorf("trakt 500"))
 
 		w := newTestWorker(store, traktMock)
 
@@ -196,7 +196,7 @@ func TestHandleMarkUnwatched(t *testing.T) {
 		traktMock := &mocks.MockTrakt{}
 
 		notification := airedNotification()
-		store.On("GetNotificationByID", uint(1)).Return(notification, nil)
+		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(notification, nil)
 
 		user := &storage.User{
 			TelegramID:          111,
@@ -204,18 +204,18 @@ func TestHandleMarkUnwatched(t *testing.T) {
 			TraktAccessToken:    "token",
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: true, // currently watched — matches expectWatched=true
 		}, nil)
 
-		traktMock.On("UnmarkEpisodeWatched", mock.Anything, 100, 2, 5).Return(nil)
-		store.On("UnmarkWatchStatus", uint(1), uint(0)).Return(nil)
+		traktMock.On("UnmarkEpisodeWatched", mock.Anything, mock.Anything, 100, 2, 5).Return(nil)
+		store.On("UnmarkWatchStatus", mock.Anything, uint(1), uint(0)).Return(nil)
 
 		// refreshNotificationMessage
-		store.On("GetChatConfig", int64(42)).Return(nil, nil)
-		store.On("GetWatchStatuses", uint(1)).Return([]storage.WatchStatus{
+		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
+		store.On("GetWatchStatuses", mock.Anything, uint(1)).Return([]storage.WatchStatus{
 			{Watched: false, User: storage.User{Username: "loraine"}},
 		}, nil)
 
@@ -240,10 +240,10 @@ func TestHandleMarkUnwatched(t *testing.T) {
 
 	t.Run("rejects if not yet watched", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetNotificationByID", uint(1)).Return(airedNotification(), nil)
+		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(airedNotification(), nil)
 		user := &storage.User{TelegramID: 111}
-		store.On("GetUserByTelegramID", int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
+		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: false, // not watched — can't unwatch
 		}, nil)

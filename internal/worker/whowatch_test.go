@@ -42,7 +42,7 @@ func TestHandleWhoWatches(t *testing.T) {
 	t.Run("sends not found when search returns no results", func(t *testing.T) {
 		store := &mocks.MockStore{}
 		traktMock := &mocks.MockTrakt{}
-		traktMock.On("SearchShows", "nonexistent show").Return([]trakt.SearchResult{}, nil)
+		traktMock.On("SearchShows", mock.Anything, "nonexistent show").Return([]trakt.SearchResult{}, nil)
 
 		w := newTestWorker(store, traktMock)
 
@@ -60,7 +60,7 @@ func TestHandleWhoWatches(t *testing.T) {
 		store := &mocks.MockStore{}
 		traktMock := &mocks.MockTrakt{}
 
-		traktMock.On("SearchShows", "breaking bad").Return([]trakt.SearchResult{
+		traktMock.On("SearchShows", mock.Anything, "breaking bad").Return([]trakt.SearchResult{
 			{Show: trakt.Show{Title: "Breaking Bad", IDs: trakt.ShowIDs{Trakt: 1388, Slug: "breaking-bad"}}},
 		}, nil)
 
@@ -68,9 +68,9 @@ func TestHandleWhoWatches(t *testing.T) {
 			{TelegramID: 111, Username: "loraine", TraktAccessToken: "t1", TraktTokenExpiresAt: time.Now().Add(48 * time.Hour)},
 			{TelegramID: 222, FirstName: "Bob", TraktAccessToken: "t2", TraktTokenExpiresAt: time.Now().Add(48 * time.Hour)},
 		}
-		store.On("GetUsersByChatID", int64(42)).Return(users, nil)
+		store.On("GetUsersByChatID", mock.Anything, int64(42)).Return(users, nil)
 
-		traktMock.On("GetWatchedShows", mock.Anything).Return(
+		traktMock.On("GetWatchedShows", mock.Anything, mock.Anything).Return(
 			[]trakt.WatchedShowEntry{
 				{Show: trakt.Show{IDs: trakt.ShowIDs{Trakt: 1388}}},
 			}, nil,
@@ -96,7 +96,7 @@ func TestHandleWhoWatches(t *testing.T) {
 		store := &mocks.MockStore{}
 		traktMock := &mocks.MockTrakt{}
 
-		traktMock.On("SearchShows", "breaking bad").Return([]trakt.SearchResult{
+		traktMock.On("SearchShows", mock.Anything, "breaking bad").Return([]trakt.SearchResult{
 			{Show: trakt.Show{Title: "Breaking Bad", IDs: trakt.ShowIDs{Trakt: 1388, Slug: "breaking-bad"}}},
 		}, nil)
 
@@ -104,14 +104,14 @@ func TestHandleWhoWatches(t *testing.T) {
 			{TelegramID: 111, Username: "loraine", TraktAccessToken: "t1", TraktTokenExpiresAt: time.Now().Add(48 * time.Hour)},
 			{TelegramID: 222, FirstName: "Bob", TraktAccessToken: "t2", TraktTokenExpiresAt: time.Now().Add(48 * time.Hour)},
 		}
-		store.On("GetUsersByChatID", int64(42)).Return(users, nil)
+		store.On("GetUsersByChatID", mock.Anything, int64(42)).Return(users, nil)
 
-		traktMock.On("GetWatchedShows", mock.Anything).Return(
+		traktMock.On("GetWatchedShows", mock.Anything, mock.Anything).Return(
 			[]trakt.WatchedShowEntry{
 				{Show: trakt.Show{IDs: trakt.ShowIDs{Trakt: 1388}}},
 			}, nil,
 		).Once()
-		traktMock.On("GetWatchedShows", mock.Anything).Return(
+		traktMock.On("GetWatchedShows", mock.Anything, mock.Anything).Return(
 			[]trakt.WatchedShowEntry{
 				{Show: trakt.Show{IDs: trakt.ShowIDs{Trakt: 9999}}},
 			}, nil,

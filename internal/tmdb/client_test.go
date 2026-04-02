@@ -1,6 +1,7 @@
 package tmdb
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,7 @@ func TestGetWatchProviders(t *testing.T) {
 		})
 		defer server.Close()
 
-		info, err := client.GetWatchProviders(1396, "US")
+		info, err := client.GetWatchProviders(context.Background(), 1396, "US")
 
 		assert.NoError(t, err)
 		assert.Equal(t, "https://www.justwatch.com/us/show/severance", info.Link)
@@ -62,7 +63,7 @@ func TestGetWatchProviders(t *testing.T) {
 		defer server.Close()
 
 		// Request GB but only US is available
-		info, err := client.GetWatchProviders(1396, "GB")
+		info, err := client.GetWatchProviders(context.Background(), 1396, "GB")
 
 		assert.NoError(t, err)
 		assert.Nil(t, info) // nil, not an error — "no providers" is a valid result
@@ -74,7 +75,7 @@ func TestGetWatchProviders(t *testing.T) {
 		})
 		defer server.Close()
 
-		_, err := client.GetWatchProviders(1396, "US")
+		_, err := client.GetWatchProviders(context.Background(), 1396, "US")
 		assert.Error(t, err)
 	})
 }

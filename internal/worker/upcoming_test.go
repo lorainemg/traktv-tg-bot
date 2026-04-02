@@ -40,7 +40,7 @@ func TestSortUpcomingEpisodes(t *testing.T) {
 func TestHandleUpcoming(t *testing.T) {
 	t.Run("sends no users message when chat is empty", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetUsersByChatID", int64(42)).Return([]storage.User{}, nil)
+		store.On("GetUsersByChatID", mock.Anything, int64(42)).Return([]storage.User{}, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -61,12 +61,12 @@ func TestHandleUpcoming(t *testing.T) {
 		users := []storage.User{
 			{TelegramID: 111, TraktAccessToken: "t1", TraktTokenExpiresAt: time.Now().Add(48 * time.Hour)},
 		}
-		store.On("GetUsersByChatID", int64(42)).Return(users, nil)
-		store.On("GetChatConfig", int64(42)).Return(nil, nil)
+		store.On("GetUsersByChatID", mock.Anything, int64(42)).Return(users, nil)
+		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
 
 		// Calendar returns empty
-		traktMock.On("GetCalendar", mock.Anything, mock.Anything, 7).Return([]trakt.CalendarEntry{}, nil)
-		traktMock.On("GetWatchlistShows", mock.Anything).Return(map[int]bool(nil), nil)
+		traktMock.On("GetCalendar", mock.Anything, mock.Anything, mock.Anything, 7).Return([]trakt.CalendarEntry{}, nil)
+		traktMock.On("GetWatchlistShows", mock.Anything, mock.Anything).Return(map[int]bool(nil), nil)
 
 		w := newTestWorker(store, traktMock)
 
@@ -88,12 +88,12 @@ func TestHandleUpcoming(t *testing.T) {
 		users := []storage.User{
 			{TelegramID: 111, TraktAccessToken: "t1", TraktTokenExpiresAt: time.Now().Add(48 * time.Hour)},
 		}
-		store.On("GetUsersByChatID", int64(42)).Return(users, nil)
-		store.On("GetChatConfig", int64(42)).Return(nil, nil)
+		store.On("GetUsersByChatID", mock.Anything, int64(42)).Return(users, nil)
+		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
 
 		// The key assertion: GetCalendar is called with days=7 (the default)
-		traktMock.On("GetCalendar", mock.Anything, mock.Anything, 7).Return([]trakt.CalendarEntry{}, nil)
-		traktMock.On("GetWatchlistShows", mock.Anything).Return(map[int]bool(nil), nil)
+		traktMock.On("GetCalendar", mock.Anything, mock.Anything, mock.Anything, 7).Return([]trakt.CalendarEntry{}, nil)
+		traktMock.On("GetWatchlistShows", mock.Anything, mock.Anything).Return(map[int]bool(nil), nil)
 
 		w := newTestWorker(store, traktMock)
 
@@ -114,11 +114,11 @@ func TestHandleUpcoming(t *testing.T) {
 		users := []storage.User{
 			{TelegramID: 111, Username: "loraine", TraktAccessToken: "t1", TraktTokenExpiresAt: time.Now().Add(48 * time.Hour)},
 		}
-		store.On("GetUsersByChatID", int64(42)).Return(users, nil)
-		store.On("GetChatConfig", int64(42)).Return(nil, nil)
+		store.On("GetUsersByChatID", mock.Anything, int64(42)).Return(users, nil)
+		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
 
-		traktMock.On("GetWatchlistShows", mock.Anything).Return(map[int]bool(nil), nil)
-		traktMock.On("GetCalendar", mock.Anything, mock.Anything, 7).Return([]trakt.CalendarEntry{
+		traktMock.On("GetWatchlistShows", mock.Anything, mock.Anything).Return(map[int]bool(nil), nil)
+		traktMock.On("GetCalendar", mock.Anything, mock.Anything, mock.Anything, 7).Return([]trakt.CalendarEntry{
 			{
 				FirstAired: time.Now().Add(2 * time.Hour),
 				Show:       trakt.Show{Title: "Severance", IDs: trakt.ShowIDs{Trakt: 100, Slug: "severance"}},

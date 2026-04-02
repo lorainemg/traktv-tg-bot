@@ -1,6 +1,7 @@
 package trakt
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +32,7 @@ func TestNewRequest(t *testing.T) {
 	c := NewClient("my-api-key", "my-secret")
 
 	t.Run("sets required Trakt headers", func(t *testing.T) {
-		req, err := c.newRequest("GET", "/test", "", nil)
+		req, err := c.newRequest(context.Background(), "GET", "/test", "", nil)
 
 		assert.NoError(t, err)
 		assert.Equal(t, "application/json", req.Header.Get("Content-Type"))
@@ -41,7 +42,7 @@ func TestNewRequest(t *testing.T) {
 	})
 
 	t.Run("sets Bearer token when provided", func(t *testing.T) {
-		req, err := c.newRequest("GET", "/test", "abc123", nil)
+		req, err := c.newRequest(context.Background(), "GET", "/test", "abc123", nil)
 
 		assert.NoError(t, err)
 		assert.Equal(t, "Bearer abc123", req.Header.Get("Authorization"))
@@ -58,7 +59,7 @@ func TestGetCalendar(t *testing.T) {
 		})
 		defer server.Close()
 
-		_, err := client.GetCalendar(staticToken("token"), "2026-04-01", 7)
+		_, err := client.GetCalendar(context.Background(), staticToken("token"), "2026-04-01", 7)
 
 		assert.NoError(t, err)
 		assert.Equal(t, "/calendars/my/shows/2026-04-01/7", capturedPath)
@@ -70,7 +71,7 @@ func TestGetCalendar(t *testing.T) {
 		})
 		defer server.Close()
 
-		_, err := client.GetCalendar(staticToken("token"), "2026-04-01", 7)
+		_, err := client.GetCalendar(context.Background(), staticToken("token"), "2026-04-01", 7)
 		assert.Error(t, err)
 	})
 }
@@ -88,7 +89,7 @@ func TestRequestDeviceCode(t *testing.T) {
 		})
 		defer server.Close()
 
-		_, err := client.RequestDeviceCode()
+		_, err := client.RequestDeviceCode(context.Background())
 
 		assert.NoError(t, err)
 		assert.Equal(t, "test-client-id", capturedBody["client_id"])

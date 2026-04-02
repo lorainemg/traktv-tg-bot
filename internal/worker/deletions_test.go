@@ -7,6 +7,7 @@ import (
 	"github.com/loraine/traktv-tg-bot/internal/mocks"
 	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"gorm.io/gorm"
 )
 
@@ -17,14 +18,14 @@ func TestHandleProcessDeletions(t *testing.T) {
 			{Model: gorm.Model{ID: 1}, ChatID: 42, MessageID: 100},
 			{Model: gorm.Model{ID: 2}, ChatID: 42, MessageID: 200},
 		}
-		store.On("GetPendingDeletions").Return(deletions, nil)
-		store.On("RemoveScheduledDeletion", uint(1)).Return(nil)
-		store.On("RemoveScheduledDeletion", uint(2)).Return(nil)
+		store.On("GetPendingDeletions", mock.Anything).Return(deletions, nil)
+		store.On("RemoveScheduledDeletion", mock.Anything, uint(1)).Return(nil)
+		store.On("RemoveScheduledDeletion", mock.Anything, uint(2)).Return(nil)
 
 		// Buffer 2 — one per deletion
 		w := New(store, nil, nil, 2)
 
-		w.handleProcessDeletions()
+		w.handleProcessDeletions(Task{})
 
 		r1 := <-w.Results()
 		assert.Equal(t, int64(42), r1.ChatID)
@@ -42,14 +43,14 @@ func TestHandleProcessDeletions(t *testing.T) {
 			{Model: gorm.Model{ID: 1}, ChatID: 42, MessageID: 100},
 			{Model: gorm.Model{ID: 2}, ChatID: 42, MessageID: 200},
 		}
-		store.On("GetPendingDeletions").Return(deletions, nil)
+		store.On("GetPendingDeletions", mock.Anything).Return(deletions, nil)
 		// First cleanup fails — handler should still process the second deletion
-		store.On("RemoveScheduledDeletion", uint(1)).Return(fmt.Errorf("db error"))
-		store.On("RemoveScheduledDeletion", uint(2)).Return(nil)
+		store.On("RemoveScheduledDeletion", mock.Anything, uint(1)).Return(fmt.Errorf("db error"))
+		store.On("RemoveScheduledDeletion", mock.Anything, uint(2)).Return(nil)
 
 		w := New(store, nil, nil, 2)
 
-		w.handleProcessDeletions()
+		w.handleProcessDeletions(Task{})
 
 		r1 := <-w.Results()
 		r2 := <-w.Results()
@@ -61,11 +62,11 @@ func TestHandleProcessDeletions(t *testing.T) {
 
 	t.Run("does nothing when no pending deletions", func(t *testing.T) {
 		store := &mocks.MockStore{}
-		store.On("GetPendingDeletions").Return([]storage.ScheduledDeletion{}, nil)
+		store.On("GetPendingDeletions", mock.Anything).Return([]storage.ScheduledDeletion{}, nil)
 
 		w := newTestWorker(store, nil)
 
-		w.handleProcessDeletions()
+		w.handleProcessDeletions(Task{})
 
 		// No results should be sent — channel should be empty
 		assert.Len(t, w.Results(), 0)
