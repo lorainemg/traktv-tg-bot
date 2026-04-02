@@ -193,7 +193,7 @@ func TestFormatWatchedByLine(t *testing.T) {
 
 		// loraine watched → ✅, Bob pending → ⏳
 		assert.Contains(t, result, "Watched by:")
-		assert.Contains(t, result, "[@loraine](https://t.me/loraine) ✅")
+		assert.Contains(t, result, "@loraine ✅")
 		assert.Contains(t, result, "[Bob](tg://user?id=222) ⏳")
 	})
 
@@ -207,7 +207,7 @@ func TestFormatWatchedByLine(t *testing.T) {
 
 		// loraine watched → ✅, Bob pending → ⏳
 		assert.Contains(t, result, "Watched by:")
-		assert.Contains(t, result, "[@loraine](https://t.me/loraine) ✅")
+		assert.Contains(t, result, "@loraine ✅")
 		assert.Contains(t, result, "[Bob](tg://user?id=222) ✅")
 	})
 }
