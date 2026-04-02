@@ -139,6 +139,15 @@ func (b *Bot) sendNewMessage(result worker.Result) {
 		ParseMode:          models.ParseModeMarkdownV1,
 		LinkPreviewOptions: preview,
 	}
+	// ReplyParameters makes this message a reply to another message.
+	// AllowSendingWithoutReply lets the message send even if the original
+	// was deleted - avoids a "message not found" error from Telegram.
+	if result.ReplyToMessageID != 0 {
+		params.ReplyParameters = &models.ReplyParameters{
+			MessageID:                result.ReplyToMessageID,
+			AllowSendingWithoutReply: true,
+		}
+	}
 	// Set ReplyMarkup: ForceReply takes priority (prompts user to reply),
 	// otherwise use inline keyboard buttons if present.
 	// A nil pointer assigned to the ReplyMarkup interface field is non-nil in Go,
@@ -284,6 +293,7 @@ func (b *Bot) handleSub(ctx context.Context, tgBot *bot.Bot, update *models.Upda
 			ChatID:     update.Message.Chat.ID,
 			FirstName:  update.Message.From.FirstName,
 			Username:   update.Message.From.Username,
+			MessageID:  update.Message.ID,
 		},
 	})
 }

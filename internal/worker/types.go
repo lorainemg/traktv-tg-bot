@@ -143,6 +143,10 @@ type Result struct {
 	Selective             bool   // when true, ForceReply only targets users mentioned in the text
 	InputFieldPlaceholder string // hint shown in the input field, e.g. "US, GB, BR"
 
+	// ReplyToMessageID, when non-zero, makes the sent message a reply to
+	// the specified message. Zero value means "don't reply to anything".
+	ReplyToMessageID int
+
 	// InlineButtons is a 2D slice: each inner slice is one row of buttons.
 	// nil means no keyboard attached.
 	InlineButtons [][]InlineButton
@@ -154,6 +158,7 @@ type SubPayload struct {
 	ChatID     int64  // the chat where the user ran /sub - notifications go here
 	FirstName  string // user's Telegram display name - used in farewell messages
 	Username   string
+	MessageID  int // the /sub command's message ID - used to reply to it on success
 }
 
 // UnsubPayload carries the data needed to unsubscribe a user from notifications.

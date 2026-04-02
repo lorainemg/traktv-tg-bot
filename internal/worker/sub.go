@@ -90,15 +90,28 @@ func (w *Worker) handleNewUserSub(task Task, payload SubPayload) {
 		return
 	}
 
-	w.results <- task.TextResult(fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode))
+	// Buffered channel (capacity 1) passes the code message's Telegram ID
+	// from the OnSent callback to the polling goroutine. Buffered so the
+	// callback never blocks even if pollForToken hasn't started reading yet.
+	codeMsgID := make(chan int, 1)
+
+	result := task.TextResult(fmt.Sprintf("Go to %s and enter code: `%s`", dc.VerificationURL, dc.UserCode))
+	result.OnSent = func(messageID int) error {
+		codeMsgID <- messageID
+		return nil
+	}
+	w.results <- result
 
 	// Poll in a goroutine so we don't block the worker loop.
-	go w.pollForToken(appotel.DetachedContext(task.Ctx), task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval, dc.ExpiresIn)
+	go w.pollForToken(appotel.DetachedContext(task.Ctx), task.ChatID, task.ThreadID, payload, dc.DeviceCode, dc.Interval, dc.ExpiresIn, codeMsgID, payload.MessageID)
 }
 
 // pollForToken repeatedly checks if the user has authorized the device code.
 // Runs as a separate goroutine so the worker's main loop stays free.
-func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, payload SubPayload, deviceCode string, intervalSecs int, expiresInSecs int) {
+// codeMsgID is a receive-only channel (<-chan) that delivers the Telegram
+// message ID of the code message, so we can delete it when auth completes.
+// subMsgID is the /sub command's message ID - the success message replies to it.
+func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, payload SubPayload, deviceCode string, intervalSecs int, expiresInSecs int, codeMsgID <-chan int, subMsgID int) {
 	ctx, span := workerTracer.Start(ctx, "worker.poll_for_token")
 	defer span.End()
 
@@ -107,6 +120,16 @@ func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, p
 	// original task - we reconstruct just enough to build Results.
 	t := Task{ChatID: chatID, ThreadID: threadID, Ctx: ctx}
 
+	// Wait for the code message's Telegram ID so we can delete it later.
+	// The 10-second timeout is a safety net in case OnSent never fires
+	// (e.g. Telegram API error) - we proceed without deleting rather than
+	// hanging forever.
+	var codeMsg int
+	select {
+	case codeMsg = <-codeMsgID:
+	case <-time.After(10 * time.Second):
+	}
+
 	deadline := time.After(time.Duration(expiresInSecs) * time.Second)
 	ticker := time.NewTicker(time.Duration(intervalSecs) * time.Second)
 	defer ticker.Stop()
@@ -114,11 +137,13 @@ func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, p
 	for {
 		select {
 		case <-deadline:
+			w.deleteCodeMessage(t, codeMsg)
 			w.results <- t.TextResult("Trakt auth timed out. Please try again.")
 			return
 		case <-ticker.C:
 			token, err := w.trakt.PollForToken(ctx, deviceCode)
 			if err != nil {
+				w.deleteCodeMessage(t, codeMsg)
 				w.results <- t.TextResult(fmt.Sprintf("Trakt auth failed: %v", err))
 				return
 			}
@@ -146,8 +171,23 @@ func (w *Worker) pollForToken(ctx context.Context, chatID int64, threadID int, p
 				return
 			}
 
-			w.results <- t.TextResult("Trakt account linked!")
+			w.deleteCodeMessage(t, codeMsg)
+			result := t.TextResult("Trakt account linked!")
+			result.ReplyToMessageID = subMsgID
+			w.results <- result
 			return
+		}
+	}
+}
+
+// deleteCodeMessage sends a delete result for the device code message.
+// Does nothing if codeMsg is 0 (meaning we never captured the message ID).
+func (w *Worker) deleteCodeMessage(t Task, codeMsg int) {
+	if codeMsg != 0 {
+		w.results <- Result{
+			ChatID:          t.ChatID,
+			DeleteMessageID: codeMsg,
+			Ctx:             t.Ctx,
 		}
 	}
 }

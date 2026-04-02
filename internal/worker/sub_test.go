@@ -76,9 +76,9 @@ func TestHandleSub(t *testing.T) {
 		// optional — the goroutine may exit via timeout before calling it.
 		traktMock.On("PollForToken", mock.Anything, "abc123").Return(nil, fmt.Errorf("auth expired")).Maybe()
 
-		// Buffer size 2: one for the device code message, one for the
-		// goroutine's error/timeout message so it doesn't block.
-		w := New(store, traktMock, nil, 2)
+		// Buffer size 3: one for the device code message, one for the
+		// goroutine's delete of the code message, one for the error/timeout message.
+		w := New(store, traktMock, nil, 3)
 
 		w.handleSub(Task{
 			ChatID: 42,
