@@ -27,6 +27,7 @@ var telegramBotToken = builder.AddParameter("telegram-bot-token", secret: true);
 var traktClientId = builder.AddParameter("trakt-client-id");
 var traktClientSecret = builder.AddParameter("trakt-client-secret", secret: true);
 var tmdbApiKey = builder.AddParameter("tmdb-api-key");
+var env = builder.ExecutionContext.IsRunMode ? "dev" : "prod";
 
 var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
 	.WithImageTag("17-alpine")
@@ -47,15 +48,16 @@ var postgres = builder.AddPostgres("postgres", dbUser, dbPassword)
 
 var database = postgres.AddDatabase("traktdb", databaseName: dbName);
 
-var bot = builder.AddGolangApp("bot", ".", "./cmd/bot")
+var bot = builder.AddDockerfile("bot", ".", "./Dockerfile", env)
 	.WithReference(database)
 	.WithEnvironment("TELEGRAM_BOT_TOKEN", telegramBotToken)
 	.WithEnvironment("TRAKT_CLIENT_ID", traktClientId)
 	.WithEnvironment("TRAKT_CLIENT_SECRET", traktClientSecret)
 	.WithEnvironment("TMDB_API_KEY", tmdbApiKey)
+	.WithEnvironment("ENV", env)
 	.WithEnvironment(context =>
 	{
-		var dbUri =database.Resource.GetConnectionProperty("URI");
+		var dbUri = database.Resource.GetConnectionProperty("URI");
 		context.EnvironmentVariables["DATABASE_URL"] = ReferenceExpression.Create($"{dbUri}?sslmode=disable");
 	})
 	.WithContainerRegistry(registry)
@@ -67,6 +69,9 @@ var bot = builder.AddGolangApp("bot", ".", "./cmd/bot")
 			Condition = "service_healthy"
 		};
 	});
+
+if (env == "dev")
+	bot.WithBindMount(".", "/app");
 
 builder.Pipeline.AddStep(
 	"push-and-prepare-env",
