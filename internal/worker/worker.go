@@ -35,7 +35,7 @@ type Worker struct {
 	tasks   chan Task       // input queue - other packages send tasks here
 	results chan Result     // output queue - worker sends messages to deliver here
 	store   storage.Service // database operations (the interface, not the concrete type)
-	trakt   trakt.Service   // Trakt API operations (interface — concrete *Client or a test mock)
+	trakt   trakt.Service   // Trakt API operations (interface - concrete *Client or a test mock)
 	tmdb    *tmdb.Client    // TMDB API client - used for watch provider lookups
 
 	// pendingInputs tracks chats where the worker expects text input.
@@ -152,7 +152,7 @@ func (w *Worker) process(task Task) {
 	case TaskMarkUnwatched:
 		w.handleMarkUnwatched(task)
 	default:
-		slog.Warn("unknown task type", "type", task.Type)
+		slog.WarnContext(task.Ctx, "unknown task type", "type", task.Type)
 	}
 }
 
