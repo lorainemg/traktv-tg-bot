@@ -29,6 +29,15 @@ type pendingInput struct {
 	createdAt time.Time // when the prompt was sent — used to expire stale entries
 }
 
+// movieBrowseSession holds the state of a user's trending movie browsing.
+// Stored in-memory on the Worker, keyed by Telegram user ID.
+// Cleaned up when the user finishes or all movies are shown.
+type movieBrowseSession struct {
+	movies []trakt.TrendingMovie // the filtered list of movies to show
+	index  int                   // current position (next movie to show)
+	chatID int64                 // group chat where Follow posts go
+}
+
 // Worker reads tasks from a channel, processes them using the Trakt API
 // and storage service, and sends results back through another channel.
 type Worker struct {
@@ -45,6 +54,7 @@ type Worker struct {
 	// in Python or the lock keyword in C#.
 	mu            sync.Mutex
 	pendingInputs map[int64]pendingInput // chatID → what we're waiting for
+	movieSessions map[int64]*movieBrowseSession // telegramUserID → active browse session
 }
 
 // New creates a Worker with buffered channels of the given size.
@@ -58,6 +68,7 @@ func New(store storage.Service, traktClient trakt.Service, tmdbClient *tmdb.Clie
 		trakt:         traktClient,
 		tmdb:          tmdbClient,
 		pendingInputs: make(map[int64]pendingInput),
+		movieSessions: make(map[int64]*movieBrowseSession),
 	}
 }
 
@@ -151,6 +162,16 @@ func (w *Worker) process(task Task) {
 		w.handlePromptNotifyHours(task)
 	case TaskMarkUnwatched:
 		w.handleMarkUnwatched(task)
+	case TaskSubscribeMovies:
+		w.handleSubscribeMovies(task)
+	case TaskSubscribeMoviesAvailable:
+		w.handleSubscribeMovies(task) // same handler, type is in the payload
+	case TaskCheckTrendingMovies:
+		w.handleCheckTrendingMovies(task)
+	case TaskFollowMovie:
+		w.handleFollowMovie(task)
+	case TaskSkipMovie:
+		w.handleSkipMovie(task)
 	default:
 		slog.WarnContext(task.Ctx, "unknown task type", "type", task.Type)
 	}
@@ -213,4 +234,27 @@ func (w *Worker) consumePendingInput(chatID int64) (pendingInput, bool) {
 		}
 	}
 	return input, exists
+}
+
+// setMovieSession stores a browse session for a user.
+// Mutex-protected because sessions are accessed from the worker goroutine.
+func (w *Worker) setMovieSession(telegramID int64, session *movieBrowseSession) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.movieSessions[telegramID] = session
+}
+
+// getMovieSession retrieves a user's browse session.
+// Returns nil if no session exists.
+func (w *Worker) getMovieSession(telegramID int64) *movieBrowseSession {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.movieSessions[telegramID]
+}
+
+// clearMovieSession removes a user's browse session.
+func (w *Worker) clearMovieSession(telegramID int64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.movieSessions, telegramID)
 }
