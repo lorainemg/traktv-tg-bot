@@ -42,6 +42,9 @@ func TestHandleMarkWatched(t *testing.T) {
 			Model:      gorm.Model{ID: 1},
 			FirstAired: time.Now().Add(24 * time.Hour).Format(time.RFC3339),
 		}
+		// User is resolved first in the new flow, then the notification is looked up
+		user := &storage.User{TelegramID: 111, Username: "loraine"}
+		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(futureNotification, nil)
 
 		w := newTestWorker(store, nil)

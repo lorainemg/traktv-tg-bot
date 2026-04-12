@@ -47,6 +47,17 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 		}
 	}
 
+	// Drop the old ScheduledDeletion unique index on just NotificationID.
+	// The old index name depends on whether it had a custom name or GORM auto-generated it.
+	for _, oldIdx := range []string{"idx_notification_id", "idx_scheduled_deletions_notification_id"} {
+		if db.Migrator().HasIndex(&ScheduledDeletion{}, oldIdx) {
+			if err := db.Migrator().DropIndex(&ScheduledDeletion{}, oldIdx); err != nil {
+				return nil, fmt.Errorf("dropping old scheduled deletion index %s: %w", oldIdx, err)
+			}
+			break
+		}
+	}
+
 	// AutoMigrate creates or updates the table schema to match the struct.
 	// It will NOT delete unused columns - only add new ones or modify existing ones.
 	if err := db.AutoMigrate(
@@ -60,6 +71,9 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 	// GORM sets new string columns to "" (empty string) for existing rows.
 	// Set them all to "episode" since that's the only type that existed before.
 	db.Exec("UPDATE watch_statuses SET notification_type = ? WHERE notification_type = ''", NotificationEpisode)
+
+	// Backfill: existing ScheduledDeletion rows are all for episodes.
+	db.Exec("UPDATE scheduled_deletions SET notification_type = ? WHERE notification_type = ''", NotificationEpisode)
 
 	// &PostgresStore{db: db} creates a pointer to a new PostgresStore.
 	// The &  operator takes the address - like & in C, giving you a pointer.

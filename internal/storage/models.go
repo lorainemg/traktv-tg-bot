@@ -104,12 +104,15 @@ type Notification struct {
 
 // ScheduledDeletion records a Telegram message that should be deleted after a delay.
 // The deletion checker periodically queries for rows where DeleteAt has passed.
+// NotificationType distinguishes between episode and movie notifications,
+// preventing ID collisions since they come from different tables.
 type ScheduledDeletion struct {
 	gorm.Model
-	NotificationID uint  `gorm:"uniqueIndex"` // one pending deletion per notification
-	ChatID         int64 // Telegram chat containing the message
-	MessageID      int   // Telegram message ID to delete
-	DeleteAt       time.Time
+	NotificationType NotificationType `gorm:"uniqueIndex:idx_type_notification_deletion"` // "episode" or "movie"
+	NotificationID   uint             `gorm:"uniqueIndex:idx_type_notification_deletion"` // one pending deletion per notification per type
+	ChatID           int64            // Telegram chat containing the message
+	MessageID        int              // Telegram message ID to delete
+	DeleteAt         time.Time
 }
 
 // ChatConfig stores per-chat settings like country, timezone, and deletion preferences.
