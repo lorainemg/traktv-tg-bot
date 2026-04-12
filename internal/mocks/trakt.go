@@ -83,3 +83,27 @@ func (m *MockTrakt) RefreshToken(ctx context.Context, refreshToken string) (*tra
 	}
 	return args.Get(0).(*trakt.Token), args.Error(1)
 }
+
+func (m *MockTrakt) GetTrendingMovies(ctx context.Context, limit int) ([]trakt.TrendingMovie, error) {
+	args := m.Called(ctx, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]trakt.TrendingMovie), args.Error(1)
+}
+
+func (m *MockTrakt) GetMovieReleases(ctx context.Context, movieSlug, country string) ([]trakt.MovieRelease, error) {
+	args := m.Called(ctx, movieSlug, country)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]trakt.MovieRelease), args.Error(1)
+}
+
+func (m *MockTrakt) MarkMovieWatched(ctx context.Context, token trakt.TokenSource, traktMovieID int) error {
+	return m.Called(ctx, token, traktMovieID).Error(0)
+}
+
+func (m *MockTrakt) UnmarkMovieWatched(ctx context.Context, token trakt.TokenSource, traktMovieID int) error {
+	return m.Called(ctx, token, traktMovieID).Error(0)
+}

@@ -147,3 +147,56 @@ type SyncEpisodeEntry struct {
 	Number    int    `json:"number"`
 	WatchedAt string `json:"watched_at"` // ISO 8601 timestamp, e.g. "2026-03-28T12:00:00Z"
 }
+
+// --- Movie types ---
+
+// MovieIDs holds the cross-platform identifiers for a movie.
+type MovieIDs struct {
+	Trakt int    `json:"trakt"`
+	Slug  string `json:"slug"`
+	IMDB  string `json:"imdb"`
+	TMDB  int    `json:"tmdb"`
+}
+
+// Movie holds movie data returned by Trakt when using ?extended=full.
+type Movie struct {
+	Title   string   `json:"title"`
+	Year    int      `json:"year"`
+	IDs     MovieIDs `json:"ids"`
+	Runtime int      `json:"runtime"` // in minutes
+	Rating  float64  `json:"rating"`  // Trakt community rating (0-10)
+	Genres  []string `json:"genres"`  // e.g. ["drama", "thriller"]
+}
+
+// TrendingMovie represents one item from GET /movies/trending.
+// Watchers is how many people are watching this movie right now on Trakt.
+type TrendingMovie struct {
+	Watchers int   `json:"watchers"`
+	Movie    Movie `json:"movie"`
+}
+
+// MovieRelease represents one release entry from GET /movies/{id}/releases/{country}.
+type MovieRelease struct {
+	Country     string `json:"country"`
+	ReleaseDate string `json:"release_date"` // ISO date, e.g. "2024-12-20"
+	ReleaseType string `json:"release_type"` // "theatrical", "digital", "physical", etc.
+	Note        string `json:"note"`
+}
+
+// --- Movie sync types for POST /sync/history ---
+
+// MovieSyncHistoryRequest is the request body for marking movies as watched.
+type MovieSyncHistoryRequest struct {
+	Movies []MovieSyncEntry `json:"movies"`
+}
+
+// MovieSyncEntry identifies a movie to mark as watched/unwatched.
+type MovieSyncEntry struct {
+	IDs       MovieSyncIDs `json:"ids"`
+	WatchedAt string       `json:"watched_at,omitempty"`
+}
+
+// MovieSyncIDs holds the Trakt ID used to identify the movie.
+type MovieSyncIDs struct {
+	Trakt int `json:"trakt"`
+}

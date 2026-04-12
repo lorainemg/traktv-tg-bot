@@ -1,6 +1,6 @@
-﻿#:package Aspire.Hosting.Docker@13.2.0
-#:sdk Aspire.AppHost.Sdk@13.2.0
-#:package Aspire.Hosting.PostgreSQL@13.2.0
+﻿#:package Aspire.Hosting.Docker@13.2.2
+#:sdk Aspire.AppHost.Sdk@13.2.2
+#:package Aspire.Hosting.PostgreSQL@13.2.2
 #:package CommunityToolkit.Aspire.Hosting.Golang@13.2.1-beta.532
 
 using Aspire.Hosting.Docker.Resources.ComposeNodes;

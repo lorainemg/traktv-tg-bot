@@ -17,4 +17,8 @@ type Service interface {
 	RequestDeviceCode(ctx context.Context) (*DeviceCode, error)
 	PollForToken(ctx context.Context, deviceCode string) (*Token, error)
 	RefreshToken(ctx context.Context, refreshToken string) (*Token, error)
+	GetTrendingMovies(ctx context.Context, limit int) ([]TrendingMovie, error)
+	GetMovieReleases(ctx context.Context, movieSlug, country string) ([]MovieRelease, error)
+	MarkMovieWatched(ctx context.Context, token TokenSource, traktMovieID int) error
+	UnmarkMovieWatched(ctx context.Context, token TokenSource, traktMovieID int) error
 }
