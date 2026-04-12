@@ -194,7 +194,7 @@ func (w *Worker) refreshNotificationMessage(ctx context.Context, notification *s
 		return
 	}
 
-	statuses, err := w.store.GetWatchStatuses(ctx, notification.ID)
+	statuses, err := w.store.GetWatchStatusesByType(ctx, storage.NotificationEpisode, notification.ID)
 	if err != nil {
 		slog.Error("failed to fetch watch statuses", "error", err)
 		return
@@ -210,7 +210,7 @@ func (w *Worker) refreshNotificationMessage(ctx context.Context, notification *s
 	// nil InlineButtons tells Telegram to remove the existing keyboard.
 	var buttons [][]InlineButton
 	if !haveAllWatched {
-		buttons = watchButtons(notification.ID)
+		buttons = watchButtons(storage.NotificationEpisode, notification.ID)
 	}
 
 	w.results <- Result{

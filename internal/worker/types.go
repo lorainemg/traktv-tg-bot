@@ -1,6 +1,10 @@
 package worker
 
-import "context"
+import (
+	"context"
+
+	"github.com/loraine/traktv-tg-bot/internal/storage"
+)
 
 // TaskType identifies what kind of work a task represents.
 // Using a custom type instead of raw int makes the code self-documenting.
@@ -31,6 +35,11 @@ const (
 	TaskWhoWatches                          // = 18 — check which users watch a show
 	TaskPromptNotifyHours                   // = 19 — prompt user for notify window hours
 	TaskMarkUnwatched                       // = 20 — reverse of TaskMarkWatched
+	TaskSubscribeMovies          // = 21 — toggle /movies subscription
+	TaskSubscribeMoviesAvailable // = 22 — toggle /movies_available subscription
+	TaskCheckTrendingMovies      // = 23 — weekly ticker: fetch and send trending cards
+	TaskFollowMovie              // = 24 — user clicked Follow on a trending card
+	TaskSkipMovie                // = 25 — user clicked Skip on a trending card
 )
 
 func (t TaskType) String() string {
@@ -77,6 +86,16 @@ func (t TaskType) String() string {
 		return "prompt_notify_hours"
 	case TaskMarkUnwatched:
 		return "mark_unwatched"
+	case TaskSubscribeMovies:
+		return "subscribe_movies"
+	case TaskSubscribeMoviesAvailable:
+		return "subscribe_movies_available"
+	case TaskCheckTrendingMovies:
+		return "check_trending_movies"
+	case TaskFollowMovie:
+		return "follow_movie"
+	case TaskSkipMovie:
+		return "skip_movie"
 	default:
 		return "unknown"
 	}
@@ -238,13 +257,29 @@ type WhoWatchesPayload struct {
 	Query string // the show name the user typed, e.g. "breaking bad"
 }
 
-// WatchActionPayload carries the data needed to mark or unmark an episode on Trakt.
-// Shared by both TaskMarkWatched and TaskMarkUnwatched since the data is identical —
-// only the handler logic differs (watched vs unwatched).
-// NotificationID comes directly from the inline button's callback data.
+// WatchActionPayload carries the data needed to mark or unmark a notification.
+// Shared by both TaskMarkWatched and TaskMarkUnwatched for both episodes and movies.
+// NotificationType tells the handler which DB table to query for the content data.
 type WatchActionPayload struct {
-	TelegramID      int64  // the user who clicked - used to find their Trakt token
-	ChatID          int64  // where to send the confirmation message
-	NotificationID  uint   // DB ID of the notification - used to find which episode
-	CallbackQueryID string // Telegram callback query ID - used to answer with a toast
+	TelegramID       int64                    // the user who clicked
+	ChatID           int64                    // where to send the confirmation
+	NotificationID   uint                     // DB ID of the notification
+	NotificationType storage.NotificationType // "episode" or "movie"
+	CallbackQueryID  string                   // Telegram callback query ID
+}
+
+// MovieSubscriptionPayload carries data for /movies and /movies_available commands.
+type MovieSubscriptionPayload struct {
+	TelegramID int64
+	ChatID     int64
+	Type       string // "all" or "available"
+}
+
+// MovieActionPayload carries data for Follow/Skip button clicks on trending cards.
+type MovieActionPayload struct {
+	TelegramID      int64  // the user browsing trending movies
+	TraktMovieID    int    // which movie was followed/skipped
+	ChatID          int64  // the DM chat where the card is displayed
+	MessageID       int    // the current card message to replace
+	CallbackQueryID string // Telegram callback query ID
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	// models provides Telegram API types like ParseMode, Update, etc.
+	"github.com/loraine/traktv-tg-bot/internal/storage"
 	"github.com/loraine/traktv-tg-bot/internal/worker"
 )
 
@@ -606,15 +607,38 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 	}
 }
 
-// handleWatchCallback parses "watched:<id>" and "unwatched:<id>" callbacks
-// and submits the appropriate task. Both share the same payload structure.
+// handleWatchCallback parses "watched:e:<id>", "watched:m:<id>",
+// "unwatched:e:<id>", and "unwatched:m:<id>" callbacks.
+// The middle segment identifies the notification type: "e" for episode, "m" for movie.
 func (b *Bot) handleWatchCallback(ctx context.Context, cq *models.CallbackQuery) {
-	// Determine direction by checking the prefix, then trim it to get the ID.
+	// Determine direction
 	taskType := worker.TaskMarkWatched
-	idStr := strings.TrimPrefix(cq.Data, "watched:")
+	data := strings.TrimPrefix(cq.Data, "watched:")
 	if strings.HasPrefix(cq.Data, "unwatched:") {
 		taskType = worker.TaskMarkUnwatched
-		idStr = strings.TrimPrefix(cq.Data, "unwatched:")
+		data = strings.TrimPrefix(cq.Data, "unwatched:")
+	}
+
+	// Parse type prefix and notification ID: "e:123" or "m:456"
+	// For backward compatibility, also handle old format without type prefix: "123"
+	var notificationType storage.NotificationType
+	var idStr string
+
+	parts := strings.SplitN(data, ":", 2)
+	if len(parts) == 2 {
+		switch parts[0] {
+		case "e":
+			notificationType = storage.NotificationEpisode
+		case "m":
+			notificationType = storage.NotificationMovie
+		default:
+			return
+		}
+		idStr = parts[1]
+	} else {
+		// Old format: just the ID, assume episode
+		notificationType = storage.NotificationEpisode
+		idStr = data
 	}
 
 	notificationID, err := strconv.ParseUint(idStr, 10, 64)
@@ -627,10 +651,11 @@ func (b *Bot) handleWatchCallback(ctx context.Context, cq *models.CallbackQuery)
 		ChatID:   cq.Message.Message.Chat.ID,
 		ThreadID: cq.Message.Message.MessageThreadID,
 		Payload: worker.WatchActionPayload{
-			TelegramID:      cq.From.ID,
-			ChatID:          cq.Message.Message.Chat.ID,
-			NotificationID:  uint(notificationID),
-			CallbackQueryID: cq.ID,
+			TelegramID:       cq.From.ID,
+			ChatID:           cq.Message.Message.Chat.ID,
+			NotificationID:   uint(notificationID),
+			NotificationType: notificationType,
+			CallbackQueryID:  cq.ID,
 		},
 	})
 }

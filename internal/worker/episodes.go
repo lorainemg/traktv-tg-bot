@@ -161,7 +161,7 @@ func (w *Worker) notifyEpisode(task Task, episode chatEpisode, chatID int64, top
 	}
 
 	// Build the full message: episode info + "Watched by" status line
-	watchedLine := w.createAndFormatWatchStatuses(task.Ctx, notification.ID, episode.userIDs)
+	watchedLine := w.createAndFormatWatchStatuses(task.Ctx, storage.NotificationEpisode, notification.ID, episode.userIDs)
 	msg := formatNotificationMessage(&notification, loc)
 	if watchedLine != "" {
 		msg += "\n\n" + watchedLine
@@ -174,7 +174,7 @@ func (w *Worker) notifyEpisode(task Task, episode chatEpisode, chatID int64, top
 		ThreadID:      threadID,
 		Text:          msg,
 		PhotoURL:      notification.PhotoURL,
-		InlineButtons: watchButtons(notification.ID),
+		InlineButtons: watchButtons(storage.NotificationEpisode, notification.ID),
 		OnSent: func(messageID int) error {
 			return w.store.UpdateNotificationMessageID(task.Ctx, notification.ID, messageID)
 		},
@@ -184,13 +184,13 @@ func (w *Worker) notifyEpisode(task Task, episode chatEpisode, chatID int64, top
 // createAndFormatWatchStatuses creates WatchStatus rows for every user in the chat
 // and returns the formatted "Watched by" line. Returns an empty string if anything
 // fails - the notification still goes out, just without the status line.
-func (w *Worker) createAndFormatWatchStatuses(ctx context.Context, notificationID uint, userIDs []uint) string {
-	if err := w.store.CreateWatchStatuses(ctx, notificationID, userIDs); err != nil {
+func (w *Worker) createAndFormatWatchStatuses(ctx context.Context, notificationType storage.NotificationType, notificationID uint, userIDs []uint) string {
+	if err := w.store.CreateWatchStatusesWithType(ctx, notificationType, notificationID, userIDs); err != nil {
 		slog.ErrorContext(ctx, "failed to create watch statuses", "error", err)
 		return ""
 	}
 
-	statuses, err := w.store.GetWatchStatuses(ctx, notificationID)
+	statuses, err := w.store.GetWatchStatusesByType(ctx, notificationType, notificationID)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to fetch watch statuses", "error", err)
 		return ""

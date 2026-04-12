@@ -15,10 +15,11 @@ import (
 // watchTestPayload builds a WatchActionPayload with common defaults.
 func watchTestPayload() WatchActionPayload {
 	return WatchActionPayload{
-		TelegramID:      111,
-		ChatID:          42,
-		NotificationID:  1,
-		CallbackQueryID: "cbq-123",
+		TelegramID:       111,
+		ChatID:           42,
+		NotificationID:   1,
+		NotificationType: storage.NotificationEpisode,
+		CallbackQueryID:  "cbq-123",
 	}
 }
 
@@ -127,7 +128,7 @@ func TestHandleMarkWatched(t *testing.T) {
 		// nil config → defaults (deleteWatched=true), so when allWatched=true
 		// it also calls CreateScheduledDeletion
 		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
-		store.On("GetWatchStatuses", mock.Anything, uint(1)).Return([]storage.WatchStatus{
+		store.On("GetWatchStatusesByType", mock.Anything, storage.NotificationEpisode, uint(1)).Return([]storage.WatchStatus{
 			{Watched: true, User: storage.User{Username: "loraine"}},
 		}, nil)
 		store.On("CreateScheduledDeletion", mock.Anything, mock.Anything).Return(nil)
@@ -215,7 +216,7 @@ func TestHandleMarkUnwatched(t *testing.T) {
 
 		// refreshNotificationMessage
 		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
-		store.On("GetWatchStatuses", mock.Anything, uint(1)).Return([]storage.WatchStatus{
+		store.On("GetWatchStatusesByType", mock.Anything, storage.NotificationEpisode, uint(1)).Return([]storage.WatchStatus{
 			{Watched: false, User: storage.User{Username: "loraine"}},
 		}, nil)
 

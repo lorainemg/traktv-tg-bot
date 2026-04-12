@@ -167,14 +167,25 @@ func TestFormatAirDate(t *testing.T) {
 }
 
 func TestWatchButtons(t *testing.T) {
-	rows := watchButtons(42)
+	t.Run("episode buttons use e prefix", func(t *testing.T) {
+		rows := watchButtons(storage.NotificationEpisode, 42)
 
-	assert.Len(t, rows, 1)
-	assert.Len(t, rows[0], 2)
-	assert.Equal(t, "✅ Watched", rows[0][0].Text)
-	assert.Equal(t, "watched:42", rows[0][0].CallbackData)
-	assert.Equal(t, "↩️ Unwatched", rows[0][1].Text)
-	assert.Equal(t, "unwatched:42", rows[0][1].CallbackData)
+		assert.Len(t, rows, 1)
+		assert.Len(t, rows[0], 2)
+		assert.Equal(t, "✅ Watched", rows[0][0].Text)
+		assert.Equal(t, "watched:e:42", rows[0][0].CallbackData)
+		assert.Equal(t, "↩️ Unwatched", rows[0][1].Text)
+		assert.Equal(t, "unwatched:e:42", rows[0][1].CallbackData)
+	})
+
+	t.Run("movie buttons use m prefix", func(t *testing.T) {
+		rows := watchButtons(storage.NotificationMovie, 99)
+
+		assert.Len(t, rows, 1)
+		assert.Len(t, rows[0], 2)
+		assert.Equal(t, "watched:m:99", rows[0][0].CallbackData)
+		assert.Equal(t, "unwatched:m:99", rows[0][1].CallbackData)
+	})
 }
 
 func TestFormatWatchedByLine(t *testing.T) {
