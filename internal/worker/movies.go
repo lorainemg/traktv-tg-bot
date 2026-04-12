@@ -62,7 +62,7 @@ func (w *Worker) handleSubscribeMovies(task Task) {
 		return
 	}
 
-	w.results <- task.TextResult(fmt.Sprintf("Subscribed to %s! You'll get a list every week.", label))
+	w.results <- task.TextResult(fmt.Sprintf("Subscribed to %s! You'll get a list every week.\n\nMake sure you've started a private chat with me first - I need that to send you the trending cards.", label))
 }
 
 // handleCheckTrendingMovies is triggered by the weekly ticker.
@@ -273,6 +273,25 @@ func (w *Worker) handleFollowMovie(task Task) {
 	w.sendNextTrendingCard(task, payload.TelegramID, session, payload.MessageID)
 }
 
+// movieTopicNames lists topic names that should receive movie notifications.
+// Use /register_topic movies (or "films") inside a forum topic to set this up.
+var movieTopicNames = map[string]bool{
+	"movies": true,
+	"films":  true,
+	"movie":  true,
+}
+
+// resolveMovieThreadID picks the forum topic for movie notifications.
+// Returns 0 (General) if no movie topic is registered.
+func resolveMovieThreadID(topics []storage.Topic) int {
+	for _, topic := range topics {
+		if movieTopicNames[topic.Name] {
+			return topic.ThreadID
+		}
+	}
+	return 0
+}
+
 // postMovieToGroupChat creates a MovieNotification and sends the formatted card.
 func (w *Worker) postMovieToGroupChat(task Task, chatID int64, tm trakt.TrendingMovie, user *storage.User) {
 	// Check if already posted to this chat
@@ -321,6 +340,14 @@ func (w *Worker) postMovieToGroupChat(task Task, chatID int64, tm trakt.Trending
 		return
 	}
 
+	// Look up the forum topic for movies (e.g. /register_topic movies)
+	topics, err := w.store.GetTopics(task.Ctx, chatID)
+	if err != nil {
+		slog.ErrorContext(task.Ctx, "failed to fetch topics", "error", err, "chat_id", chatID)
+		topics = nil // non-fatal — post to General
+	}
+	threadID := resolveMovieThreadID(topics)
+
 	// Create watch statuses and format the message
 	watchedLine := w.createAndFormatWatchStatuses(task.Ctx, storage.NotificationMovie, mn.ID, []uint{user.ID})
 	msg := formatMovieNotification(&mn)
@@ -331,6 +358,7 @@ func (w *Worker) postMovieToGroupChat(task Task, chatID int64, tm trakt.Trending
 	w.results <- Result{
 		Ctx:           task.Ctx,
 		ChatID:        chatID,
+		ThreadID:      threadID,
 		Text:          msg,
 		PhotoURL:      mn.PhotoURL,
 		InlineButtons: watchButtons(storage.NotificationMovie, mn.ID),
