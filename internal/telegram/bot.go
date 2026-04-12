@@ -64,6 +64,8 @@ func NewBot(token string, w *worker.Worker) (*Bot, error) {
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/config", bot.MatchTypePrefix, b.handleConfig)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/unseen", bot.MatchTypePrefix, b.handleUnseen)
 	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/whowatch", bot.MatchTypePrefix, b.handleWhoWatch)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/movies_available", bot.MatchTypePrefix, b.handleMoviesAvailable)
+	tgBot.RegisterHandler(bot.HandlerTypeMessageText, "/movies", bot.MatchTypePrefix, b.handleMovies)
 
 	b.bot = tgBot
 	return b, nil
@@ -253,6 +255,8 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 /whowatch &lt;show&gt; - Check who in this chat watches a specific show
 /register_topic &lt;genre&gt; - Route episode notifications of a genre to this group topic
 /config - Chat settings: country, timezone, auto-delete watched notifications, notify window
+/movies - Subscribe to weekly trending movies
+/movies_available - Subscribe to trending movies available digitally
 
 Just /sub to get started and I'll handle the rest!`
 
@@ -491,6 +495,34 @@ func (b *Bot) handleWhoWatch(ctx context.Context, tgBot *bot.Bot, update *models
 	})
 }
 
+// handleMovies toggles subscription to all trending movies.
+func (b *Bot) handleMovies(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	b.submit(ctx, worker.Task{
+		Type:     worker.TaskSubscribeMovies,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
+		Payload: worker.MovieSubscriptionPayload{
+			TelegramID: update.Message.From.ID,
+			ChatID:     update.Message.Chat.ID,
+			Type:       "all",
+		},
+	})
+}
+
+// handleMoviesAvailable toggles subscription to trending movies with past digital/physical release.
+func (b *Bot) handleMoviesAvailable(ctx context.Context, tgBot *bot.Bot, update *models.Update) {
+	b.submit(ctx, worker.Task{
+		Type:     worker.TaskSubscribeMoviesAvailable,
+		ChatID:   update.Message.Chat.ID,
+		ThreadID: update.Message.MessageThreadID,
+		Payload: worker.MovieSubscriptionPayload{
+			TelegramID: update.Message.From.ID,
+			ChatID:     update.Message.Chat.ID,
+			Type:       "available",
+		},
+	})
+}
+
 // parseUserTarget extracts the target user from a command message.
 // Supports three forms: "/cmd" (self), "/cmd @username", or reply to a message.
 // Reused by any command that targets a single user (/shows, /unseen, etc.).
@@ -596,6 +628,15 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 		return
 	}
 
+	if strings.HasPrefix(cq.Data, "movie_follow:") {
+		b.handleMovieFollowCallback(ctx, cq)
+		return
+	}
+	if cq.Data == "movie_skip" {
+		b.handleMovieSkipCallback(ctx, cq)
+		return
+	}
+
 	// Pagination callbacks: "shows:<page>" or "upcoming:<days>:<page>"
 	if strings.HasPrefix(cq.Data, "shows:") {
 		b.handlePaginationCallback(ctx, cq, worker.TaskShowsPage)
@@ -656,6 +697,42 @@ func (b *Bot) handleWatchCallback(ctx context.Context, cq *models.CallbackQuery)
 			NotificationID:   uint(notificationID),
 			NotificationType: notificationType,
 			CallbackQueryID:  cq.ID,
+		},
+	})
+}
+
+// handleMovieFollowCallback parses "movie_follow:<traktMovieID>" and submits a follow task.
+func (b *Bot) handleMovieFollowCallback(ctx context.Context, cq *models.CallbackQuery) {
+	idStr := strings.TrimPrefix(cq.Data, "movie_follow:")
+	traktMovieID, err := strconv.Atoi(idStr)
+	if err != nil {
+		return
+	}
+
+	b.submit(ctx, worker.Task{
+		Type:   worker.TaskFollowMovie,
+		ChatID: cq.Message.Message.Chat.ID,
+		Payload: worker.MovieActionPayload{
+			TelegramID:      cq.From.ID,
+			TraktMovieID:    traktMovieID,
+			ChatID:          cq.Message.Message.Chat.ID,
+			MessageID:       cq.Message.Message.ID,
+			CallbackQueryID: cq.ID,
+		},
+	})
+}
+
+// handleMovieSkipCallback submits a skip task for the current trending card.
+// The Skip button doesn't encode a movie ID — the worker reads from the browse session.
+func (b *Bot) handleMovieSkipCallback(ctx context.Context, cq *models.CallbackQuery) {
+	b.submit(ctx, worker.Task{
+		Type:   worker.TaskSkipMovie,
+		ChatID: cq.Message.Message.Chat.ID,
+		Payload: worker.MovieActionPayload{
+			TelegramID:      cq.From.ID,
+			ChatID:          cq.Message.Message.Chat.ID,
+			MessageID:       cq.Message.Message.ID,
+			CallbackQueryID: cq.ID,
 		},
 	})
 }
