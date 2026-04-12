@@ -8,6 +8,16 @@ import (
 	"gorm.io/gorm"
 )
 
+// NotificationType distinguishes between episode and movie notifications.
+// Used as a discriminator in WatchStatus so both content types share
+// one watch-tracking table. Stored as a string in the DB for readability.
+type NotificationType string
+
+const (
+	NotificationEpisode NotificationType = "episode"
+	NotificationMovie   NotificationType = "movie"
+)
+
 // User represents a Telegram user who has linked their Trakt.tv account.
 // GORM maps this struct to a "users" table automatically.
 type User struct {
@@ -113,19 +123,57 @@ type ChatConfig struct {
 	NotifyHours   int    // how many hours before air time to include in notifications (0 = use default)
 }
 
-// WatchStatus tracks whether a specific user has watched a notified episode.
-// This is a "join table" - it links a Notification to a User, with an extra
-// Watched flag. Used to render the "Watched by: @user ✅  @other ⏳" line
-// at the bottom of episode notification messages.
+// WatchStatus tracks whether a specific user has watched a notified episode or movie.
+// This is a "join table" - it links a notification (episode or movie) to a User,
+// with an extra Watched flag. NotificationType + NotificationID together identify
+// which notification this refers to.
 type WatchStatus struct {
 	gorm.Model
-	// Composite unique index: one row per user per notification.
-	NotificationID uint `gorm:"uniqueIndex:idx_notification_user"`
-	UserID         uint `gorm:"uniqueIndex:idx_notification_user"`
-	Watched        bool // false = ⏳ (pending), true = ✅ (watched)
+	// Composite unique index: one row per user per notification per type.
+	NotificationType NotificationType `gorm:"uniqueIndex:idx_type_notification_user"`
+	NotificationID   uint             `gorm:"uniqueIndex:idx_type_notification_user"`
+	UserID           uint             `gorm:"uniqueIndex:idx_type_notification_user"`
+	Watched          bool             // false = ⏳ (pending), true = ✅ (watched)
 
 	// GORM associations - lets us eager-load related records with Preload().
 	// "foreignKey:..." tells GORM which field in this struct points to the related table's primary key.
 	User         User         `gorm:"foreignKey:UserID"`
 	Notification Notification `gorm:"foreignKey:NotificationID"`
+}
+
+// MovieSubscription tracks which users subscribe to trending movie notifications.
+// Type distinguishes between "all" (all trending) and "available" (digital/physical released).
+type MovieSubscription struct {
+	gorm.Model
+	UserID uint   `gorm:"uniqueIndex:idx_user_sub_type"` // one subscription per type per user
+	ChatID int64  // group chat where followed movies get posted
+	Type   string `gorm:"uniqueIndex:idx_user_sub_type"` // "all" or "available"
+	User   User   `gorm:"foreignKey:UserID"`
+}
+
+// FollowedMovie tracks movies a user has already seen in trending lists
+// (followed or skipped). Used for deduplication so the same movie
+// doesn't appear in future weekly trending lists.
+type FollowedMovie struct {
+	gorm.Model
+	UserID       uint `gorm:"uniqueIndex:idx_user_movie"` // one entry per movie per user
+	TraktMovieID int  `gorm:"uniqueIndex:idx_user_movie"`
+	User         User `gorm:"foreignKey:UserID"`
+}
+
+// MovieNotification tracks movies posted to the group chat after a user
+// clicks Follow. One notification per movie per chat — shared across users.
+// Stores all movie data needed to reconstruct the message for editing.
+type MovieNotification struct {
+	gorm.Model
+	ChatID            int64 `gorm:"uniqueIndex:idx_chat_movie"` // one notification per movie per chat
+	TraktMovieID      int   `gorm:"uniqueIndex:idx_chat_movie"`
+	MovieTitle        string
+	Year              int
+	Genre             string
+	Runtime           int
+	Rating            float64
+	MovieSlug         string
+	IMDBID            string
+	TelegramMessageID int
 }

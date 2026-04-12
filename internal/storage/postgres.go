@@ -37,11 +37,29 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 		return nil, fmt.Errorf("enabling gorm telemetry: %w", err)
 	}
 
+	// Drop the old unique index before AutoMigrate creates the new one.
+	// This is needed because we're changing WatchStatus's unique index from
+	// (NotificationID, UserID) to (NotificationType, NotificationID, UserID).
+	// GORM AutoMigrate won't drop the old index automatically.
+	if db.Migrator().HasIndex(&WatchStatus{}, "idx_notification_user") {
+		if err := db.Migrator().DropIndex(&WatchStatus{}, "idx_notification_user"); err != nil {
+			return nil, fmt.Errorf("dropping old watch status index: %w", err)
+		}
+	}
+
 	// AutoMigrate creates or updates the table schema to match the struct.
 	// It will NOT delete unused columns - only add new ones or modify existing ones.
-	if err := db.AutoMigrate(&User{}, &Notification{}, &Topic{}, &WatchStatus{}, &ScheduledDeletion{}, &ChatConfig{}); err != nil {
+	if err := db.AutoMigrate(
+		&User{}, &Notification{}, &Topic{}, &WatchStatus{}, &ScheduledDeletion{}, &ChatConfig{},
+		&MovieSubscription{}, &FollowedMovie{}, &MovieNotification{},
+	); err != nil {
 		return nil, fmt.Errorf("running auto-migration: %w", err)
 	}
+
+	// Backfill: existing WatchStatus rows were created before NotificationType existed.
+	// GORM sets new string columns to "" (empty string) for existing rows.
+	// Set them all to "episode" since that's the only type that existed before.
+	db.Exec("UPDATE watch_statuses SET notification_type = ? WHERE notification_type = ''", NotificationEpisode)
 
 	// &PostgresStore{db: db} creates a pointer to a new PostgresStore.
 	// The &  operator takes the address - like & in C, giving you a pointer.
