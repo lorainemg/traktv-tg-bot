@@ -181,3 +181,69 @@ func (m *MockStore) GetPendingDeletions(ctx context.Context) ([]storage.Schedule
 func (m *MockStore) RemoveScheduledDeletion(ctx context.Context, id uint) error {
 	return m.Called(ctx, id).Error(0)
 }
+
+func (m *MockStore) GetMovieSubscription(ctx context.Context, userID uint, subType string) (*storage.MovieSubscription, error) {
+	args := m.Called(ctx, userID, subType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.MovieSubscription), args.Error(1)
+}
+
+func (m *MockStore) CreateMovieSubscription(ctx context.Context, sub *storage.MovieSubscription) error {
+	return m.Called(ctx, sub).Error(0)
+}
+
+func (m *MockStore) DeleteMovieSubscription(ctx context.Context, userID uint, subType string) error {
+	return m.Called(ctx, userID, subType).Error(0)
+}
+
+func (m *MockStore) GetMovieSubscribers(ctx context.Context) ([]storage.MovieSubscription, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.MovieSubscription), args.Error(1)
+}
+
+func (m *MockStore) CreateFollowedMovie(ctx context.Context, fm *storage.FollowedMovie) error {
+	return m.Called(ctx, fm).Error(0)
+}
+
+func (m *MockStore) HasFollowedMovie(ctx context.Context, userID uint, traktMovieID int) (bool, error) {
+	args := m.Called(ctx, userID, traktMovieID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStore) CreateMovieNotification(ctx context.Context, mn *storage.MovieNotification) error {
+	return m.Called(ctx, mn).Error(0)
+}
+
+func (m *MockStore) GetMovieNotificationByID(ctx context.Context, id uint) (*storage.MovieNotification, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*storage.MovieNotification), args.Error(1)
+}
+
+func (m *MockStore) HasMovieNotification(ctx context.Context, chatID int64, traktMovieID int) (bool, error) {
+	args := m.Called(ctx, chatID, traktMovieID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStore) UpdateMovieNotificationMessageID(ctx context.Context, id uint, messageID int) error {
+	return m.Called(ctx, id, messageID).Error(0)
+}
+
+func (m *MockStore) CreateWatchStatusesWithType(ctx context.Context, notificationType storage.NotificationType, notificationID uint, userIDs []uint) error {
+	return m.Called(ctx, notificationType, notificationID, userIDs).Error(0)
+}
+
+func (m *MockStore) GetWatchStatusesByType(ctx context.Context, notificationType storage.NotificationType, notificationID uint) ([]storage.WatchStatus, error) {
+	args := m.Called(ctx, notificationType, notificationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]storage.WatchStatus), args.Error(1)
+}

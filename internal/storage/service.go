@@ -45,4 +45,24 @@ type Service interface {
 	CreateScheduledDeletion(ctx context.Context, deletion *ScheduledDeletion) error
 	GetPendingDeletions(ctx context.Context) ([]ScheduledDeletion, error)
 	RemoveScheduledDeletion(ctx context.Context, id uint) error
+
+	// Movie subscription methods
+	GetMovieSubscription(ctx context.Context, userID uint, subType string) (*MovieSubscription, error)
+	CreateMovieSubscription(ctx context.Context, sub *MovieSubscription) error
+	DeleteMovieSubscription(ctx context.Context, userID uint, subType string) error
+	GetMovieSubscribers(ctx context.Context) ([]MovieSubscription, error)
+
+	// Followed movie methods - deduplication for trending lists
+	CreateFollowedMovie(ctx context.Context, fm *FollowedMovie) error
+	HasFollowedMovie(ctx context.Context, userID uint, traktMovieID int) (bool, error)
+
+	// Movie notification methods - group chat movie cards
+	CreateMovieNotification(ctx context.Context, mn *MovieNotification) error
+	GetMovieNotificationByID(ctx context.Context, id uint) (*MovieNotification, error)
+	HasMovieNotification(ctx context.Context, chatID int64, traktMovieID int) (bool, error)
+	UpdateMovieNotificationMessageID(ctx context.Context, id uint, messageID int) error
+
+	// Updated WatchStatus methods that accept NotificationType
+	CreateWatchStatusesWithType(ctx context.Context, notificationType NotificationType, notificationID uint, userIDs []uint) error
+	GetWatchStatusesByType(ctx context.Context, notificationType NotificationType, notificationID uint) ([]WatchStatus, error)
 }

@@ -433,3 +433,135 @@ func (s *PostgresStore) RemoveScheduledDeletion(ctx context.Context, id uint) er
 	}
 	return nil
 }
+
+// --- Movie subscription methods ---
+
+func (s *PostgresStore) GetMovieSubscription(ctx context.Context, userID uint, subType string) (*MovieSubscription, error) {
+	var sub MovieSubscription
+	err := s.db.WithContext(ctx).Where("user_id = ? AND type = ?", userID, subType).First(&sub).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching movie subscription for user %d: %w", userID, err)
+	}
+	return &sub, nil
+}
+
+func (s *PostgresStore) CreateMovieSubscription(ctx context.Context, sub *MovieSubscription) error {
+	if err := s.db.WithContext(ctx).Create(sub).Error; err != nil {
+		return fmt.Errorf("creating movie subscription: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) DeleteMovieSubscription(ctx context.Context, userID uint, subType string) error {
+	result := s.db.WithContext(ctx).Where("user_id = ? AND type = ?", userID, subType).Delete(&MovieSubscription{})
+	if result.Error != nil {
+		return fmt.Errorf("deleting movie subscription for user %d: %w", userID, result.Error)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetMovieSubscribers(ctx context.Context) ([]MovieSubscription, error) {
+	var subs []MovieSubscription
+	err := s.db.WithContext(ctx).Preload("User").Find(&subs).Error
+	if err != nil {
+		return nil, fmt.Errorf("fetching movie subscribers: %w", err)
+	}
+	return subs, nil
+}
+
+// --- Followed movie methods ---
+
+func (s *PostgresStore) CreateFollowedMovie(ctx context.Context, fm *FollowedMovie) error {
+	if err := s.db.WithContext(ctx).Create(fm).Error; err != nil {
+		return fmt.Errorf("creating followed movie: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) HasFollowedMovie(ctx context.Context, userID uint, traktMovieID int) (bool, error) {
+	var fm FollowedMovie
+	err := s.db.WithContext(ctx).Where("user_id = ? AND trakt_movie_id = ?", userID, traktMovieID).First(&fm).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("checking followed movie: %w", err)
+	}
+	return true, nil
+}
+
+// --- Movie notification methods ---
+
+func (s *PostgresStore) CreateMovieNotification(ctx context.Context, mn *MovieNotification) error {
+	if err := s.db.WithContext(ctx).Create(mn).Error; err != nil {
+		return fmt.Errorf("creating movie notification: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetMovieNotificationByID(ctx context.Context, id uint) (*MovieNotification, error) {
+	var mn MovieNotification
+	err := s.db.WithContext(ctx).First(&mn, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetching movie notification by ID %d: %w", id, err)
+	}
+	return &mn, nil
+}
+
+func (s *PostgresStore) HasMovieNotification(ctx context.Context, chatID int64, traktMovieID int) (bool, error) {
+	var mn MovieNotification
+	err := s.db.WithContext(ctx).Where("chat_id = ? AND trakt_movie_id = ?", chatID, traktMovieID).First(&mn).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("checking movie notification: %w", err)
+	}
+	return true, nil
+}
+
+func (s *PostgresStore) UpdateMovieNotificationMessageID(ctx context.Context, id uint, messageID int) error {
+	result := s.db.WithContext(ctx).Model(&MovieNotification{}).Where("id = ?", id).Update("telegram_message_id", messageID)
+	if result.Error != nil {
+		return fmt.Errorf("updating movie notification message ID for ID %d: %w", id, result.Error)
+	}
+	return nil
+}
+
+// --- Typed WatchStatus methods ---
+
+// CreateWatchStatusesWithType bulk-inserts WatchStatus rows with a NotificationType.
+// Used for both episode and movie notifications.
+func (s *PostgresStore) CreateWatchStatusesWithType(ctx context.Context, notificationType NotificationType, notificationID uint, userIDs []uint) error {
+	statuses := make([]WatchStatus, len(userIDs))
+	for i, uid := range userIDs {
+		statuses[i] = WatchStatus{
+			NotificationType: notificationType,
+			NotificationID:   notificationID,
+			UserID:           uid,
+			Watched:          false,
+		}
+	}
+	if err := s.db.WithContext(ctx).Create(&statuses).Error; err != nil {
+		return fmt.Errorf("creating watch statuses for %s notification %d: %w", notificationType, notificationID, err)
+	}
+	return nil
+}
+
+// GetWatchStatusesByType returns WatchStatus rows filtered by NotificationType.
+func (s *PostgresStore) GetWatchStatusesByType(ctx context.Context, notificationType NotificationType, notificationID uint) ([]WatchStatus, error) {
+	var statuses []WatchStatus
+	err := s.db.WithContext(ctx).Preload("User").
+		Where("notification_type = ? AND notification_id = ?", notificationType, notificationID).
+		Find(&statuses).Error
+	if err != nil {
+		return nil, fmt.Errorf("fetching watch statuses for %s notification %d: %w", notificationType, notificationID, err)
+	}
+	return statuses, nil
+}
