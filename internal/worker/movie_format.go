@@ -42,19 +42,19 @@ func formatTrendingCard(tm trakt.TrendingMovie, releases []trakt.MovieRelease) s
 		msg += fmt.Sprintf("\n⭐️ [%.1f Trakt](%s)", movie.Rating, traktURL)
 	}
 
-	// Overview (short synopsis) in italics
+	// Release date lines — only show types that have a date
+	releaseLines := formatReleaseLines(releases)
+	if releaseLines != "" {
+		msg += "\n" + releaseLines
+	}
+
+	// Overview (short synopsis) in italics — last thing on the card
 	if movie.Overview != "" {
 		overview := escapeMarkdownV1(movie.Overview)
 		if len(overview) > 200 {
 			overview = overview[:197] + "..."
 		}
 		msg += fmt.Sprintf("\n\n_%s_", overview)
-	}
-
-	// Release date lines — only show types that have a date
-	releaseLines := formatReleaseLines(releases)
-	if releaseLines != "" {
-		msg += "\n" + releaseLines
 	}
 
 	return msg
@@ -72,10 +72,18 @@ func formatMovieNotification(mn *storage.MovieNotification) string {
 		msg += fmt.Sprintf("\n_%s_", mn.Genre)
 	}
 
-	// Line 3: Trakt rating with link
+	// Line 3: Trakt rating + Stremio link on same line
+	var links []string
 	if mn.Rating > 0 && mn.MovieSlug != "" {
 		traktURL := fmt.Sprintf("https://trakt.tv/movies/%s", mn.MovieSlug)
-		msg += fmt.Sprintf("\n⭐️ [%.1f Trakt](%s)", mn.Rating, traktURL)
+		links = append(links, fmt.Sprintf("[%.1f Trakt](%s)", mn.Rating, traktURL))
+	}
+	if mn.IMDBID != "" {
+		stremioURL := fmt.Sprintf("https://web.strem.io/#/detail/movie/%s", mn.IMDBID)
+		links = append(links, fmt.Sprintf("[▶️ Stremio](%s)", stremioURL))
+	}
+	if len(links) > 0 {
+		msg += "\n⭐️ " + strings.Join(links, " · ")
 	}
 
 	// Overview in italics
@@ -90,12 +98,6 @@ func formatMovieNotification(mn *storage.MovieNotification) string {
 	// Actors line (with empty line before for spacing)
 	if mn.Actors != "" {
 		msg += fmt.Sprintf("\n\n🎭 %s", mn.Actors)
-	}
-
-	// Stremio link
-	if mn.IMDBID != "" {
-		stremioURL := fmt.Sprintf("https://web.strem.io/#/detail/movie/%s", mn.IMDBID)
-		msg += fmt.Sprintf("\n[▶️ Stremio](%s)", stremioURL)
 	}
 
 	return msg

@@ -76,7 +76,7 @@ func (w *Worker) validateWatchAction(task Task, taskName string) *watchActionCon
 		return nil
 	}
 
-	watchStatus, err := w.store.GetUserWatchStatus(task.Ctx, payload.NotificationID, user.ID)
+	watchStatus, err := w.store.GetUserWatchStatus(task.Ctx, payload.NotificationType, payload.NotificationID, user.ID)
 	if err != nil {
 		slog.Error("failed to look up watch status", "error", err)
 		return nil
@@ -110,7 +110,7 @@ type watchActionParams struct {
 	// syncTraktMovie calls the Trakt API for movies.
 	syncTraktMovie func(ctx context.Context, user *storage.User, mn *storage.MovieNotification) error
 	// syncDB updates the local database (mark or unmark).
-	syncDB func(ctx context.Context, notificationID uint, userID uint) error
+	syncDB func(ctx context.Context, notificationType storage.NotificationType, notificationID uint, userID uint) error
 }
 
 // executeWatchAction is the shared implementation for both watched and unwatched.
@@ -141,7 +141,7 @@ func (w *Worker) executeWatchAction(task Task, taskName string, params watchActi
 		return
 	}
 
-	if err := params.syncDB(task.Ctx, wac.payload.NotificationID, wac.user.ID); err != nil {
+	if err := params.syncDB(task.Ctx, wac.payload.NotificationType, wac.payload.NotificationID, wac.user.ID); err != nil {
 		slog.Error("db sync failed", "action", taskName, "error", err)
 		w.answerCallback(task.Ctx, wac.payload.CallbackQueryID, params.failMsg, true)
 		return

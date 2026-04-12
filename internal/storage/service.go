@@ -32,10 +32,10 @@ type Service interface {
 	// WatchStatus methods - track per-user watched state on episode notifications
 	CreateWatchStatuses(ctx context.Context, notificationID uint, userIDs []uint) error
 	GetWatchStatuses(ctx context.Context, notificationID uint) ([]WatchStatus, error)
-	GetUserWatchStatus(ctx context.Context, notificationID uint, userID uint) (WatchStatus, error)
+	GetUserWatchStatus(ctx context.Context, notificationType NotificationType, notificationID uint, userID uint) (WatchStatus, error)
 	GetUnwatchedStatusesByUser(ctx context.Context, userID uint) ([]WatchStatus, error)
-	MarkWatchStatus(ctx context.Context, notificationID uint, userID uint) error
-	UnmarkWatchStatus(ctx context.Context, notificationID uint, userID uint) error
+	MarkWatchStatus(ctx context.Context, notificationType NotificationType, notificationID uint, userID uint) error
+	UnmarkWatchStatus(ctx context.Context, notificationType NotificationType, notificationID uint, userID uint) error
 
 	// ChatConfig methods - per-chat settings (country, timezone, deletion toggle)
 	GetChatConfig(ctx context.Context, chatID int64) (*ChatConfig, error)

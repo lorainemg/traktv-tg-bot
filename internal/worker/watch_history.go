@@ -60,7 +60,7 @@ func (w *Worker) checkUserWatchHistory(task Task, user *storage.User, chatID int
 	matched := syncWatchedEpisodes(history, unwatched)
 
 	for _, status := range matched {
-		if err := w.store.MarkWatchStatus(task.Ctx, status.Notification.ID, user.ID); err != nil {
+		if err := w.store.MarkWatchStatus(task.Ctx, storage.NotificationEpisode, status.Notification.ID, user.ID); err != nil {
 			slog.ErrorContext(task.Ctx, "failed to update watch status from history sync", "error", err)
 			continue
 		}

@@ -66,7 +66,7 @@ func TestHandleMarkWatched(t *testing.T) {
 		user := &storage.User{TelegramID: 111, Username: "loraine"}
 		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 		// Zero ID means no watch status found — user isn't following
-		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{}, nil)
+		store.On("GetUserWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(storage.WatchStatus{}, nil)
 
 		w := newTestWorker(store, nil)
 
@@ -86,7 +86,7 @@ func TestHandleMarkWatched(t *testing.T) {
 		user := &storage.User{TelegramID: 111, Username: "loraine"}
 		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 		// Already watched — expectWatched is false for MarkWatched, so mismatch
-		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: true,
 		}, nil)
@@ -117,7 +117,7 @@ func TestHandleMarkWatched(t *testing.T) {
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
 		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: false, // not yet watched — matches expectWatched=false
 		}, nil)
@@ -125,7 +125,7 @@ func TestHandleMarkWatched(t *testing.T) {
 		// Trakt API call to mark watched
 		traktMock.On("MarkEpisodeWatched", mock.Anything, mock.Anything, 100, 2, 5).Return(nil)
 		// DB update
-		store.On("MarkWatchStatus", mock.Anything, uint(1), uint(0)).Return(nil)
+		store.On("MarkWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(nil)
 
 		// refreshNotificationMessage calls: GetChatConfig, GetWatchStatuses
 		// nil config → defaults (deleteWatched=true), so when allWatched=true
@@ -171,7 +171,7 @@ func TestHandleMarkWatched(t *testing.T) {
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
 		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: false,
 		}, nil)
@@ -209,13 +209,13 @@ func TestHandleMarkUnwatched(t *testing.T) {
 			TraktTokenExpiresAt: time.Now().Add(48 * time.Hour),
 		}
 		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: true, // currently watched — matches expectWatched=true
 		}, nil)
 
 		traktMock.On("UnmarkEpisodeWatched", mock.Anything, mock.Anything, 100, 2, 5).Return(nil)
-		store.On("UnmarkWatchStatus", mock.Anything, uint(1), uint(0)).Return(nil)
+		store.On("UnmarkWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(nil)
 
 		// refreshNotificationMessage
 		store.On("GetChatConfig", mock.Anything, int64(42)).Return(nil, nil)
@@ -247,7 +247,7 @@ func TestHandleMarkUnwatched(t *testing.T) {
 		store.On("GetNotificationByID", mock.Anything, uint(1)).Return(airedNotification(), nil)
 		user := &storage.User{TelegramID: 111}
 		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
-		store.On("GetUserWatchStatus", mock.Anything, uint(1), uint(0)).Return(storage.WatchStatus{
+		store.On("GetUserWatchStatus", mock.Anything, storage.NotificationEpisode, uint(1), uint(0)).Return(storage.WatchStatus{
 			Model:   gorm.Model{ID: 5},
 			Watched: false, // not watched — can't unwatch
 		}, nil)

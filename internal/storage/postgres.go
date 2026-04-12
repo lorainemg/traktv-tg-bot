@@ -334,14 +334,14 @@ func (s *PostgresStore) GetWatchStatuses(ctx context.Context, notificationID uin
 	return statuses, nil
 }
 
-func (s *PostgresStore) GetUserWatchStatus(ctx context.Context, notificationID uint, userID uint) (WatchStatus, error) {
+func (s *PostgresStore) GetUserWatchStatus(ctx context.Context, notificationType NotificationType, notificationID uint, userID uint) (WatchStatus, error) {
 	var status WatchStatus
-	err := s.db.WithContext(ctx).Where("notification_id = ? AND user_id = ?", notificationID, userID).First(&status).Error
+	err := s.db.WithContext(ctx).Where("notification_type = ? AND notification_id = ? AND user_id = ?", notificationType, notificationID, userID).First(&status).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return status, nil
 		}
-		return status, fmt.Errorf("fetching watch status for notification %d and user %d: %w", notificationID, userID, err)
+		return status, fmt.Errorf("fetching watch status for %s notification %d and user %d: %w", notificationType, notificationID, userID, err)
 	}
 	return status, nil
 }
@@ -363,24 +363,24 @@ func (s *PostgresStore) GetUnwatchedStatusesByUser(ctx context.Context, userID u
 
 // MarkWatchStatus sets Watched=true for a specific user on a specific notification.
 // Uses GORM's Update with a Where clause targeting both foreign keys.
-func (s *PostgresStore) MarkWatchStatus(ctx context.Context, notificationID uint, userID uint) error {
+func (s *PostgresStore) MarkWatchStatus(ctx context.Context, notificationType NotificationType, notificationID uint, userID uint) error {
 	result := s.db.WithContext(ctx).Model(&WatchStatus{}).
-		Where("notification_id = ? AND user_id = ?", notificationID, userID).
+		Where("notification_type = ? AND notification_id = ? AND user_id = ?", notificationType, notificationID, userID).
 		Update("watched", true)
 	if result.Error != nil {
-		return fmt.Errorf("marking watch status for notification %d, user %d: %w", notificationID, userID, result.Error)
+		return fmt.Errorf("marking watch status for %s notification %d, user %d: %w", notificationType, notificationID, userID, result.Error)
 	}
 	return nil
 }
 
 // UnmarkWatchStatus sets Watched=false for a specific user on a specific notification.
 // The reverse of MarkWatchStatus — used when a user clicks "Mark as Unwatched".
-func (s *PostgresStore) UnmarkWatchStatus(ctx context.Context, notificationID uint, userID uint) error {
+func (s *PostgresStore) UnmarkWatchStatus(ctx context.Context, notificationType NotificationType, notificationID uint, userID uint) error {
 	result := s.db.WithContext(ctx).Model(&WatchStatus{}).
-		Where("notification_id = ? AND user_id = ?", notificationID, userID).
+		Where("notification_type = ? AND notification_id = ? AND user_id = ?", notificationType, notificationID, userID).
 		Update("watched", false)
 	if result.Error != nil {
-		return fmt.Errorf("unmarking watch status for notification %d, user %d: %w", notificationID, userID, result.Error)
+		return fmt.Errorf("unmarking watch status for %s notification %d, user %d: %w", notificationType, notificationID, userID, result.Error)
 	}
 	return nil
 }

@@ -133,8 +133,8 @@ func (m *MockStore) GetWatchStatuses(ctx context.Context, notificationID uint) (
 	return args.Get(0).([]storage.WatchStatus), args.Error(1)
 }
 
-func (m *MockStore) GetUserWatchStatus(ctx context.Context, notificationID uint, userID uint) (storage.WatchStatus, error) {
-	args := m.Called(ctx, notificationID, userID)
+func (m *MockStore) GetUserWatchStatus(ctx context.Context, notificationType storage.NotificationType, notificationID uint, userID uint) (storage.WatchStatus, error) {
+	args := m.Called(ctx, notificationType, notificationID, userID)
 	return args.Get(0).(storage.WatchStatus), args.Error(1)
 }
 
@@ -146,12 +146,12 @@ func (m *MockStore) GetUnwatchedStatusesByUser(ctx context.Context, userID uint)
 	return args.Get(0).([]storage.WatchStatus), args.Error(1)
 }
 
-func (m *MockStore) MarkWatchStatus(ctx context.Context, notificationID uint, userID uint) error {
-	return m.Called(ctx, notificationID, userID).Error(0)
+func (m *MockStore) MarkWatchStatus(ctx context.Context, notificationType storage.NotificationType, notificationID uint, userID uint) error {
+	return m.Called(ctx, notificationType, notificationID, userID).Error(0)
 }
 
-func (m *MockStore) UnmarkWatchStatus(ctx context.Context, notificationID uint, userID uint) error {
-	return m.Called(ctx, notificationID, userID).Error(0)
+func (m *MockStore) UnmarkWatchStatus(ctx context.Context, notificationType storage.NotificationType, notificationID uint, userID uint) error {
+	return m.Called(ctx, notificationType, notificationID, userID).Error(0)
 }
 
 func (m *MockStore) GetChatConfig(ctx context.Context, chatID int64) (*storage.ChatConfig, error) {
