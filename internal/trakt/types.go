@@ -160,12 +160,14 @@ type MovieIDs struct {
 
 // Movie holds movie data returned by Trakt when using ?extended=full.
 type Movie struct {
-	Title   string   `json:"title"`
-	Year    int      `json:"year"`
-	IDs     MovieIDs `json:"ids"`
-	Runtime int      `json:"runtime"` // in minutes
-	Rating  float64  `json:"rating"`  // Trakt community rating (0-10)
-	Genres  []string `json:"genres"`  // e.g. ["drama", "thriller"]
+	Title    string     `json:"title"`
+	Year     int        `json:"year"`
+	IDs      MovieIDs   `json:"ids"`
+	Runtime  int        `json:"runtime"`  // in minutes
+	Rating   float64    `json:"rating"`   // Trakt community rating (0-10)
+	Genres   []string   `json:"genres"`   // e.g. ["drama", "thriller"]
+	Overview string     `json:"overview"` // short synopsis from extended=full
+	Images   ShowImages `json:"images"`   // poster and thumb URLs from extended=full
 }
 
 // TrendingMovie represents one item from GET /movies/trending.
@@ -181,6 +183,32 @@ type MovieRelease struct {
 	ReleaseDate string `json:"release_date"` // ISO date, e.g. "2024-12-20"
 	ReleaseType string `json:"release_type"` // "theatrical", "digital", "physical", etc.
 	Note        string `json:"note"`
+}
+
+// MovieCastEntry represents one cast member from GET /movies/{slug}/people.
+type MovieCastEntry struct {
+	Character string      `json:"character"`
+	Person    MoviePerson `json:"person"`
+}
+
+// PersonIDs holds identifiers for a person (actor, director, etc.).
+type PersonIDs struct {
+	Trakt int    `json:"trakt"`
+	Slug  string `json:"slug"`
+	IMDB  string `json:"imdb"`
+	TMDB  int    `json:"tmdb"`
+}
+
+// MoviePerson holds person info from the Trakt people endpoint.
+type MoviePerson struct {
+	Name string    `json:"name"`
+	IDs  PersonIDs `json:"ids"`
+}
+
+// MoviePeopleResponse represents the response from GET /movies/{slug}/people.
+// We only need the cast array, not crew.
+type MoviePeopleResponse struct {
+	Cast []MovieCastEntry `json:"cast"`
 }
 
 // --- Movie sync types for POST /sync/history ---

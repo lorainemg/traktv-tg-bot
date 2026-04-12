@@ -632,8 +632,12 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cq *models.CallbackQuery)
 		b.handleMovieFollowCallback(ctx, cq)
 		return
 	}
-	if cq.Data == "movie_skip" {
+	if strings.HasPrefix(cq.Data, "movie_skip:") {
 		b.handleMovieSkipCallback(ctx, cq)
+		return
+	}
+	if cq.Data == "movie_prev" || cq.Data == "movie_next" {
+		b.handleMovieNavCallback(ctx, cq)
 		return
 	}
 
@@ -722,11 +726,36 @@ func (b *Bot) handleMovieFollowCallback(ctx context.Context, cq *models.Callback
 	})
 }
 
-// handleMovieSkipCallback submits a skip task for the current trending card.
-// The Skip button doesn't encode a movie ID — the worker reads from the browse session.
+// handleMovieSkipCallback parses "movie_skip:<traktMovieID>" and submits a skip task.
 func (b *Bot) handleMovieSkipCallback(ctx context.Context, cq *models.CallbackQuery) {
+	idStr := strings.TrimPrefix(cq.Data, "movie_skip:")
+	traktMovieID, err := strconv.Atoi(idStr)
+	if err != nil {
+		return
+	}
+
 	b.submit(ctx, worker.Task{
 		Type:   worker.TaskSkipMovie,
+		ChatID: cq.Message.Message.Chat.ID,
+		Payload: worker.MovieActionPayload{
+			TelegramID:      cq.From.ID,
+			TraktMovieID:    traktMovieID,
+			ChatID:          cq.Message.Message.Chat.ID,
+			MessageID:       cq.Message.Message.ID,
+			CallbackQueryID: cq.ID,
+		},
+	})
+}
+
+// handleMovieNavCallback handles "movie_prev" and "movie_next" navigation callbacks.
+func (b *Bot) handleMovieNavCallback(ctx context.Context, cq *models.CallbackQuery) {
+	taskType := worker.TaskMoviePrev
+	if cq.Data == "movie_next" {
+		taskType = worker.TaskMovieNext
+	}
+
+	b.submit(ctx, worker.Task{
+		Type:   taskType,
 		ChatID: cq.Message.Message.Chat.ID,
 		Payload: worker.MovieActionPayload{
 			TelegramID:      cq.From.ID,

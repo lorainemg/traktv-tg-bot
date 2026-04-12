@@ -40,6 +40,8 @@ const (
 	TaskCheckTrendingMovies      // = 23 — weekly ticker: fetch and send trending cards
 	TaskFollowMovie              // = 24 — user clicked Follow on a trending card
 	TaskSkipMovie                // = 25 — user clicked Skip on a trending card
+	TaskMoviePrev                // = 26 — user clicked Prev on a trending card
+	TaskMovieNext                // = 27 — user clicked Next on a trending card
 )
 
 func (t TaskType) String() string {
@@ -96,6 +98,10 @@ func (t TaskType) String() string {
 		return "follow_movie"
 	case TaskSkipMovie:
 		return "skip_movie"
+	case TaskMoviePrev:
+		return "movie_prev"
+	case TaskMovieNext:
+		return "movie_next"
 	default:
 		return "unknown"
 	}

@@ -308,6 +308,7 @@ func (w *Worker) refreshMovieNotificationMessage(ctx context.Context, mn *storag
 		Ctx:           ctx,
 		ChatID:        chatID,
 		Text:          msg,
+		PhotoURL:      mn.PhotoURL,
 		EditMessageID: mn.TelegramMessageID,
 		InlineButtons: buttons,
 	}

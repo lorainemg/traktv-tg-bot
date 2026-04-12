@@ -21,4 +21,5 @@ type Service interface {
 	GetMovieReleases(ctx context.Context, movieSlug, country string) ([]MovieRelease, error)
 	MarkMovieWatched(ctx context.Context, token TokenSource, traktMovieID int) error
 	UnmarkMovieWatched(ctx context.Context, token TokenSource, traktMovieID int) error
+	GetMoviePeople(ctx context.Context, movieSlug string) ([]MovieCastEntry, error)
 }

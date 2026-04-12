@@ -179,4 +179,7 @@ type MovieNotification struct {
 	MovieSlug         string
 	IMDBID            string
 	TelegramMessageID int
+	PhotoURL          string // movie thumbnail URL from Trakt
+	Overview          string // short synopsis from Trakt
+	Actors            string // comma-separated top actors, e.g. "Adrien Brody, Felicity Jones"
 }

@@ -107,3 +107,11 @@ func (m *MockTrakt) MarkMovieWatched(ctx context.Context, token trakt.TokenSourc
 func (m *MockTrakt) UnmarkMovieWatched(ctx context.Context, token trakt.TokenSource, traktMovieID int) error {
 	return m.Called(ctx, token, traktMovieID).Error(0)
 }
+
+func (m *MockTrakt) GetMoviePeople(ctx context.Context, movieSlug string) ([]trakt.MovieCastEntry, error) {
+	args := m.Called(ctx, movieSlug)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]trakt.MovieCastEntry), args.Error(1)
+}

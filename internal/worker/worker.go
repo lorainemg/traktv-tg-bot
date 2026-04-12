@@ -172,6 +172,10 @@ func (w *Worker) process(task Task) {
 		w.handleFollowMovie(task)
 	case TaskSkipMovie:
 		w.handleSkipMovie(task)
+	case TaskMoviePrev:
+		w.handleMoviePrev(task)
+	case TaskMovieNext:
+		w.handleMovieNext(task)
 	default:
 		slog.WarnContext(task.Ctx, "unknown task type", "type", task.Type)
 	}

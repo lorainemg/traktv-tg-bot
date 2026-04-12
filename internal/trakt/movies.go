@@ -80,6 +80,30 @@ func (c *Client) MarkMovieWatched(ctx context.Context, token TokenSource, traktM
 	return nil
 }
 
+// GetMoviePeople fetches the cast for a movie.
+// No OAuth needed — uses only the API key.
+// Uses: GET /movies/{slug}/people
+func (c *Client) GetMoviePeople(ctx context.Context, movieSlug string) ([]MovieCastEntry, error) {
+	path := fmt.Sprintf("/movies/%s/people", movieSlug)
+
+	resp, err := c.do(ctx, http.MethodGet, path, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetching movie people: %w", err)
+	}
+	defer closeBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetching movie people: unexpected status %d", resp.StatusCode)
+	}
+
+	var people MoviePeopleResponse
+	if err := json.NewDecoder(resp.Body).Decode(&people); err != nil {
+		return nil, fmt.Errorf("decoding movie people response: %w", err)
+	}
+
+	return people.Cast, nil
+}
+
 // UnmarkMovieWatched removes a movie from the user's Trakt watch history.
 // Uses: POST /sync/history/remove with a movies array.
 func (c *Client) UnmarkMovieWatched(ctx context.Context, token TokenSource, traktMovieID int) error {

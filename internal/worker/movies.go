@@ -3,6 +3,7 @@ package worker
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/loraine/traktv-tg-bot/internal/storage"
@@ -69,7 +70,7 @@ func (w *Worker) handleSubscribeMovies(task Task) {
 func (w *Worker) handleCheckTrendingMovies(task Task) {
 	slog.DebugContext(task.Ctx, "checking trending movies")
 
-	movies, err := w.trakt.GetTrendingMovies(task.Ctx, 10)
+	movies, err := w.trakt.GetTrendingMovies(task.Ctx, 50)
 	if err != nil {
 		slog.ErrorContext(task.Ctx, "failed to fetch trending movies", "error", err)
 		return
@@ -125,7 +126,7 @@ func (w *Worker) sendTrendingToSubscriber(task Task, sub storage.MovieSubscripti
 		chatID: sub.ChatID,
 	}
 	w.setMovieSession(sub.User.TelegramID, session)
-	w.sendNextTrendingCard(task, sub.User.TelegramID, session)
+	w.sendNextTrendingCard(task, sub.User.TelegramID, session, 0)
 }
 
 // filterAvailableMovies keeps only movies with a past digital or physical release date.
@@ -139,9 +140,11 @@ func (w *Worker) filterAvailableMovies(task Task, sub storage.MovieSubscription,
 	}
 
 	now := time.Now()
+	// Trakt expects lowercase country codes in URLs (e.g. "us" not "US")
+	country := strings.ToLower(settings.country)
 	var available []trakt.TrendingMovie
 	for _, tm := range movies {
-		releases, err := w.trakt.GetMovieReleases(task.Ctx, tm.Movie.IDs.Slug, settings.country)
+		releases, err := w.trakt.GetMovieReleases(task.Ctx, tm.Movie.IDs.Slug, country)
 		if err != nil {
 			slog.ErrorContext(task.Ctx, "failed to fetch releases", "error", err, "movie", tm.Movie.Title)
 			continue
@@ -170,15 +173,17 @@ func hasAvailableRelease(releases []trakt.MovieRelease, now time.Time) bool {
 	return false
 }
 
-// sendNextTrendingCard sends the current movie card from the browse session.
-// If all movies are shown, sends a completion message and cleans up.
-func (w *Worker) sendNextTrendingCard(task Task, telegramID int64, session *movieBrowseSession) {
+// sendNextTrendingCard sends or edits the current movie card from the browse session.
+// editMessageID: 0 = send new message (first card), non-zero = edit existing message.
+// If all movies are shown, sends/edits a completion message and cleans up.
+func (w *Worker) sendNextTrendingCard(task Task, telegramID int64, session *movieBrowseSession, editMessageID int) {
 	if session.index >= len(session.movies) {
 		w.clearMovieSession(telegramID)
 		w.results <- Result{
-			Ctx:    task.Ctx,
-			ChatID: telegramID,
-			Text:   "That's all for this week! 🎬",
+			Ctx:           task.Ctx,
+			ChatID:        telegramID,
+			EditMessageID: editMessageID,
+			Text:          "That's all for this week! 🎬",
 		}
 		return
 	}
@@ -187,9 +192,10 @@ func (w *Worker) sendNextTrendingCard(task Task, telegramID int64, session *movi
 
 	// Fetch release dates for this movie
 	settings, _ := w.loadChatSettings(task.Ctx, session.chatID)
-	country := "US"
+	country := "us"
 	if settings.country != "" {
-		country = settings.country
+		// Trakt expects lowercase country codes in URLs (e.g. "us" not "US")
+		country = strings.ToLower(settings.country)
 	}
 	releases, err := w.trakt.GetMovieReleases(task.Ctx, tm.Movie.IDs.Slug, country)
 	if err != nil {
@@ -200,11 +206,19 @@ func (w *Worker) sendNextTrendingCard(task Task, telegramID int64, session *movi
 
 	msg := formatTrendingCard(tm, releases)
 
+	// Build thumbnail URL - Trakt returns paths without the protocol prefix
+	var photoURL string
+	if len(tm.Movie.Images.Thumb) > 0 {
+		photoURL = "https://" + tm.Movie.Images.Thumb[0]
+	}
+
 	w.results <- Result{
 		Ctx:           task.Ctx,
 		ChatID:        telegramID,
+		EditMessageID: editMessageID,
 		Text:          msg,
-		InlineButtons: movieFollowSkipButtons(tm.Movie.IDs.Trakt),
+		PhotoURL:      photoURL,
+		InlineButtons: movieBrowseButtons(tm.Movie.IDs.Trakt, session.index, len(session.movies)),
 	}
 }
 
@@ -256,7 +270,7 @@ func (w *Worker) handleFollowMovie(task Task) {
 
 	// Advance to next card
 	session.index++
-	w.sendNextTrendingCard(task, payload.TelegramID, session)
+	w.sendNextTrendingCard(task, payload.TelegramID, session, payload.MessageID)
 }
 
 // postMovieToGroupChat creates a MovieNotification and sends the formatted card.
@@ -271,6 +285,22 @@ func (w *Worker) postMovieToGroupChat(task Task, chatID int64, tm trakt.Trending
 		return
 	}
 
+	// Build thumbnail URL - Trakt returns paths without the protocol prefix
+	var photoURL string
+	if len(tm.Movie.Images.Thumb) > 0 {
+		photoURL = "https://" + tm.Movie.Images.Thumb[0]
+	}
+
+	// Fetch top actors for the group chat card
+	var actorsStr string
+	cast, err := w.trakt.GetMoviePeople(task.Ctx, tm.Movie.IDs.Slug)
+	if err != nil {
+		slog.ErrorContext(task.Ctx, "failed to fetch movie cast", "error", err, "movie", tm.Movie.Title)
+		// Non-fatal — show card without actors
+	} else {
+		actorsStr = formatTopActors(cast, 4)
+	}
+
 	mn := storage.MovieNotification{
 		ChatID:       chatID,
 		TraktMovieID: tm.Movie.IDs.Trakt,
@@ -281,6 +311,9 @@ func (w *Worker) postMovieToGroupChat(task Task, chatID int64, tm trakt.Trending
 		Rating:       tm.Movie.Rating,
 		MovieSlug:    tm.Movie.IDs.Slug,
 		IMDBID:       tm.Movie.IDs.IMDB,
+		PhotoURL:     photoURL,
+		Overview:     tm.Movie.Overview,
+		Actors:       actorsStr,
 	}
 
 	if err := w.store.CreateMovieNotification(task.Ctx, &mn); err != nil {
@@ -299,6 +332,7 @@ func (w *Worker) postMovieToGroupChat(task Task, chatID int64, tm trakt.Trending
 		Ctx:           task.Ctx,
 		ChatID:        chatID,
 		Text:          msg,
+		PhotoURL:      mn.PhotoURL,
 		InlineButtons: watchButtons(storage.NotificationMovie, mn.ID),
 		OnSent: func(messageID int) error {
 			return w.store.UpdateMovieNotificationMessageID(task.Ctx, mn.ID, messageID)
@@ -320,24 +354,63 @@ func (w *Worker) handleSkipMovie(task Task) {
 		return
 	}
 
+	// Save as followed so it won't appear next week
+	if err := w.store.CreateFollowedMovie(task.Ctx, &storage.FollowedMovie{
+		UserID:       user.ID,
+		TraktMovieID: payload.TraktMovieID,
+	}); err != nil {
+		slog.ErrorContext(task.Ctx, "failed to save skipped movie", "error", err)
+	}
+
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, "Skipped!", false)
+
 	session := w.getMovieSession(payload.TelegramID)
 	if session == nil {
 		return
 	}
 
-	// Get the current movie from the session for dedup
-	if session.index < len(session.movies) {
-		currentMovie := session.movies[session.index]
-		if err := w.store.CreateFollowedMovie(task.Ctx, &storage.FollowedMovie{
-			UserID:       user.ID,
-			TraktMovieID: currentMovie.Movie.IDs.Trakt,
-		}); err != nil {
-			slog.ErrorContext(task.Ctx, "failed to save skipped movie", "error", err)
-		}
+	session.index++
+	w.sendNextTrendingCard(task, payload.TelegramID, session, payload.MessageID)
+}
+
+// handleMoviePrev navigates to the previous movie card without side effects.
+func (w *Worker) handleMoviePrev(task Task) {
+	payload, ok := task.Payload.(MovieActionPayload)
+	if !ok {
+		slog.ErrorContext(task.Ctx, "invalid payload for movie prev task")
+		return
 	}
 
-	w.answerCallback(task.Ctx, payload.CallbackQueryID, "Skipped!", false)
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, "", false)
 
-	session.index++
-	w.sendNextTrendingCard(task, payload.TelegramID, session)
+	session := w.getMovieSession(payload.TelegramID)
+	if session == nil {
+		return
+	}
+
+	if session.index > 0 {
+		session.index--
+	}
+	w.sendNextTrendingCard(task, payload.TelegramID, session, payload.MessageID)
+}
+
+// handleMovieNext navigates to the next movie card without side effects.
+func (w *Worker) handleMovieNext(task Task) {
+	payload, ok := task.Payload.(MovieActionPayload)
+	if !ok {
+		slog.ErrorContext(task.Ctx, "invalid payload for movie next task")
+		return
+	}
+
+	w.answerCallback(task.Ctx, payload.CallbackQueryID, "", false)
+
+	session := w.getMovieSession(payload.TelegramID)
+	if session == nil {
+		return
+	}
+
+	if session.index < len(session.movies)-1 {
+		session.index++
+	}
+	w.sendNextTrendingCard(task, payload.TelegramID, session, payload.MessageID)
 }

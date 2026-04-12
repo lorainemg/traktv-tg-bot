@@ -42,6 +42,15 @@ func formatTrendingCard(tm trakt.TrendingMovie, releases []trakt.MovieRelease) s
 		msg += fmt.Sprintf("\n⭐️ [%.1f Trakt](%s)", movie.Rating, traktURL)
 	}
 
+	// Overview (short synopsis) in italics
+	if movie.Overview != "" {
+		overview := escapeMarkdownV1(movie.Overview)
+		if len(overview) > 200 {
+			overview = overview[:197] + "..."
+		}
+		msg += fmt.Sprintf("\n\n_%s_", overview)
+	}
+
 	// Release date lines — only show types that have a date
 	releaseLines := formatReleaseLines(releases)
 	if releaseLines != "" {
@@ -69,7 +78,21 @@ func formatMovieNotification(mn *storage.MovieNotification) string {
 		msg += fmt.Sprintf("\n⭐️ [%.1f Trakt](%s)", mn.Rating, traktURL)
 	}
 
-	// Line 4: Stremio link
+	// Overview in italics
+	if mn.Overview != "" {
+		overview := escapeMarkdownV1(mn.Overview)
+		if len(overview) > 200 {
+			overview = overview[:197] + "..."
+		}
+		msg += fmt.Sprintf("\n\n_%s_", overview)
+	}
+
+	// Actors line (with empty line before for spacing)
+	if mn.Actors != "" {
+		msg += fmt.Sprintf("\n\n🎭 %s", mn.Actors)
+	}
+
+	// Stremio link
 	if mn.IMDBID != "" {
 		stremioURL := fmt.Sprintf("https://web.strem.io/#/detail/movie/%s", mn.IMDBID)
 		msg += fmt.Sprintf("\n[▶️ Stremio](%s)", stremioURL)
@@ -133,19 +156,77 @@ func formatReleaseDate(dateStr string) string {
 	return t.Format("Jan 2, 2006")
 }
 
-// movieFollowSkipButtons builds the Follow/Skip inline keyboard for a trending card.
-// traktMovieID is encoded in the Follow callback data so the worker knows which movie.
-func movieFollowSkipButtons(traktMovieID int) [][]InlineButton {
-	return [][]InlineButton{
+// escapeMarkdownV1 escapes characters that have special meaning in Telegram's
+// MarkdownV1 format: underscores (italic), asterisks (bold), backticks (code),
+// and square brackets (links). Without escaping, text like "sci_fi" would break
+// the italic formatting when wrapped in underscores.
+func escapeMarkdownV1(s string) string {
+	s = strings.ReplaceAll(s, "_", "\\_")
+	s = strings.ReplaceAll(s, "*", "\\*")
+	s = strings.ReplaceAll(s, "`", "\\`")
+	s = strings.ReplaceAll(s, "[", "\\[")
+	return s
+}
+
+// formatTopActors builds a comma-separated list of the first N cast members.
+// Each actor with an IMDB ID becomes a clickable link; others are plain text.
+// Returns empty string if there are no cast members.
+func formatTopActors(cast []trakt.MovieCastEntry, max int) string {
+	if len(cast) == 0 {
+		return ""
+	}
+	limit := max
+	if len(cast) < limit {
+		limit = len(cast)
+	}
+	names := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		person := cast[i].Person
+		if person.IDs.IMDB != "" {
+			imdbURL := fmt.Sprintf("https://www.imdb.com/name/%s/", person.IDs.IMDB)
+			names[i] = fmt.Sprintf("[%s](%s)", person.Name, imdbURL)
+		} else {
+			names[i] = person.Name
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+// movieBrowseButtons builds the two-row inline keyboard for trending cards.
+// Row 1: Follow + Skip (both mark movie as seen)
+// Row 2: Prev + Next (just navigate, no side effects)
+// Prev is hidden on the first card, Next is hidden on the last card.
+func movieBrowseButtons(traktMovieID int, index, total int) [][]InlineButton {
+	// Row 1: Follow and Skip
+	row1 := []InlineButton{
 		{
-			{
-				Text:         "✅ Follow",
-				CallbackData: fmt.Sprintf("movie_follow:%d", traktMovieID),
-			},
-			{
-				Text:         "⏭ Skip",
-				CallbackData: "movie_skip",
-			},
+			Text:         "✅ Follow",
+			CallbackData: fmt.Sprintf("movie_follow:%d", traktMovieID),
+		},
+		{
+			Text:         "⏭ Skip",
+			CallbackData: fmt.Sprintf("movie_skip:%d", traktMovieID),
 		},
 	}
+
+	// Row 2: Prev and Next navigation
+	var row2 []InlineButton
+	if index > 0 {
+		row2 = append(row2, InlineButton{
+			Text:         "◀ Prev",
+			CallbackData: "movie_prev",
+		})
+	}
+	if index < total-1 {
+		row2 = append(row2, InlineButton{
+			Text:         "Next ▶",
+			CallbackData: "movie_next",
+		})
+	}
+
+	buttons := [][]InlineButton{row1}
+	if len(row2) > 0 {
+		buttons = append(buttons, row2)
+	}
+	return buttons
 }

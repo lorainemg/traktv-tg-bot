@@ -100,6 +100,25 @@ func startDeletionChecker(ctx context.Context, w *worker.Worker, interval time.D
 	}
 }
 
+// startMovieChecker submits a trending movie check on a weekly schedule.
+// In dev mode, runs every 2 minutes for fast feedback.
+func startMovieChecker(ctx context.Context, w *worker.Worker, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Check immediately on startup
+	w.Submit(worker.Task{Type: worker.TaskCheckTrendingMovies, Ctx: ctx})
+
+	for {
+		select {
+		case <-ticker.C:
+			w.Submit(worker.Task{Type: worker.TaskCheckTrendingMovies, Ctx: ctx})
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func setupLogger() {
 	isDev := strings.HasPrefix(strings.ToLower(os.Getenv("ENV")), "dev")
 	if isDev {
@@ -199,6 +218,13 @@ func main() {
 	go startEpisodeChecker(ctx, w, tickInterval)
 	go startWatchHistoryChecker(ctx, w, tickInterval)
 	go startDeletionChecker(ctx, w, tickInterval)
+
+	// Movie checker: weekly in production, every 2 minutes in dev
+	movieInterval := 168 * time.Hour // 1 week
+	if strings.HasPrefix(strings.ToLower(os.Getenv("ENV")), "dev") {
+		movieInterval = 2 * time.Minute
+	}
+	go startMovieChecker(ctx, w, movieInterval)
 
 	slog.Info("bot is running, press Ctrl+C to stop")
 	tgBot.Start(ctx)
