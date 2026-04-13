@@ -70,10 +70,10 @@ func Connect(databaseURL string) (*PostgresStore, error) {
 	// Backfill: existing WatchStatus rows were created before NotificationType existed.
 	// GORM sets new string columns to "" (empty string) for existing rows.
 	// Set them all to "episode" since that's the only type that existed before.
-	db.Exec("UPDATE watch_statuses SET notification_type = ? WHERE notification_type = ''", NotificationEpisode)
+	db.Exec("UPDATE watch_statuses SET notification_type = ? WHERE notification_type = '' OR notification_type IS NULL", NotificationEpisode)
 
 	// Backfill: existing ScheduledDeletion rows are all for episodes.
-	db.Exec("UPDATE scheduled_deletions SET notification_type = ? WHERE notification_type = ''", NotificationEpisode)
+	db.Exec("UPDATE scheduled_deletions SET notification_type = ? WHERE notification_type = '' OR notification_type IS NULL", NotificationEpisode)
 
 	// &PostgresStore{db: db} creates a pointer to a new PostgresStore.
 	// The &  operator takes the address - like & in C, giving you a pointer.
