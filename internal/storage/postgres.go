@@ -470,7 +470,10 @@ func (s *PostgresStore) CreateMovieSubscription(ctx context.Context, sub *MovieS
 }
 
 func (s *PostgresStore) DeleteMovieSubscription(ctx context.Context, userID uint, subType string) error {
-	result := s.db.WithContext(ctx).Where("user_id = ? AND type = ?", userID, subType).Delete(&MovieSubscription{})
+	// Unscoped() bypasses GORM's soft delete (which only sets deleted_at)
+	// and performs a real DELETE FROM. Without this, the soft-deleted row
+	// still occupies the unique index slot, blocking re-subscription.
+	result := s.db.WithContext(ctx).Unscoped().Where("user_id = ? AND type = ?", userID, subType).Delete(&MovieSubscription{})
 	if result.Error != nil {
 		return fmt.Errorf("deleting movie subscription for user %d: %w", userID, result.Error)
 	}

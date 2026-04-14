@@ -52,17 +52,38 @@ func (w *Worker) handleSubscribeMovies(task Task) {
 		return
 	}
 
-	if err := w.store.CreateMovieSubscription(task.Ctx, &storage.MovieSubscription{
+	sub := &storage.MovieSubscription{
 		UserID: user.ID,
 		ChatID: payload.ChatID,
 		Type:   payload.Type,
-	}); err != nil {
+	}
+	if err := w.store.CreateMovieSubscription(task.Ctx, sub); err != nil {
 		slog.ErrorContext(task.Ctx, "failed to create subscription", "error", err)
 		w.results <- task.TextResult("Something went wrong, please try again.")
 		return
 	}
 
-	w.results <- task.TextResult(fmt.Sprintf("Subscribed to %s! You'll get a list every week.\n\nMake sure you've started a private chat with me first - I need that to send you the trending cards.", label))
+	w.results <- task.TextResult(fmt.Sprintf("Subscribed to %s! Fetching your first batch now...\n\nMake sure you've started a private chat with me first - I need that to send you the trending cards.", label))
+
+	// Send trending movies immediately so the user doesn't have to wait
+	// for the next weekly check. We fill in the User field manually because
+	// we already have it — normally Preload("User") does this during the
+	// weekly batch query.
+	sub.User = *user
+	w.sendInitialTrending(task, *sub)
+}
+
+// sendInitialTrending fetches trending movies and sends them to a new subscriber
+// right away. Separated from handleSubscribeMovies to keep each function focused
+// on one thing: subscription toggle vs. initial delivery.
+func (w *Worker) sendInitialTrending(task Task, sub storage.MovieSubscription) {
+	movies, err := w.trakt.GetTrendingMovies(task.Ctx, 50)
+	if err != nil {
+		slog.ErrorContext(task.Ctx, "failed to fetch trending movies for new subscriber", "error", err)
+		return
+	}
+
+	w.sendTrendingToSubscriber(task, sub, movies)
 }
 
 // handleCheckTrendingMovies is triggered by the weekly ticker.

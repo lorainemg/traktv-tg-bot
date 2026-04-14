@@ -255,8 +255,8 @@ func (b *Bot) handleHelp(ctx context.Context, tgBot *bot.Bot, update *models.Upd
 /whowatch &lt;show&gt; - Check who in this chat watches a specific show
 /register_topic &lt;genre&gt; - Route episode notifications of a genre to this group topic
 /config - Chat settings: country, timezone, auto-delete watched notifications, notify window
-/movies - Subscribe to weekly trending movies
-/movies_available - Subscribe to trending movies available digitally
+/movies - Toggle weekly trending movies (run again to unsubscribe)
+/movies_available - Toggle trending movies available digitally (run again to unsubscribe)
 
 Just /sub to get started and I'll handle the rest!`
 

@@ -32,12 +32,18 @@ func testTrendingMovie(traktID int, title string) trakt.TrendingMovie {
 func TestHandleSubscribeMovies(t *testing.T) {
 	t.Run("subscribes when no existing subscription", func(t *testing.T) {
 		store := &mocks.MockStore{}
+		traktMock := &mocks.MockTrakt{}
 		user := &storage.User{TelegramID: 111, Username: "loraine"}
 		store.On("GetUserByTelegramID", mock.Anything, int64(111)).Return(user, nil)
 		store.On("GetMovieSubscription", mock.Anything, uint(0), "all").Return(nil, nil)
 		store.On("CreateMovieSubscription", mock.Anything, mock.AnythingOfType("*storage.MovieSubscription")).Return(nil)
 
-		w := newTestWorker(store, nil)
+		// After subscribing, sendInitialTrending fetches movies immediately.
+		// An empty list means the user gets a "no new movies" message.
+		traktMock.On("GetTrendingMovies", mock.Anything, 50).Return([]trakt.TrendingMovie{}, nil)
+
+		// Buffer 2: subscription confirmation + "no new movies" message
+		w := New(store, traktMock, nil, 2)
 
 		w.handleSubscribeMovies(Task{
 			ChatID: 42,
@@ -50,7 +56,13 @@ func TestHandleSubscribeMovies(t *testing.T) {
 
 		result := <-w.Results()
 		assert.Contains(t, result.Text, "Subscribed")
+
+		// Verify initial trending fetch fired
+		noMovies := <-w.Results()
+		assert.Contains(t, noMovies.Text, "No new trending movies")
+
 		store.AssertExpectations(t)
+		traktMock.AssertExpectations(t)
 	})
 
 	t.Run("unsubscribes when already subscribed", func(t *testing.T) {
