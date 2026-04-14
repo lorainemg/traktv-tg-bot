@@ -15,7 +15,8 @@ using Microsoft.Extensions.Logging;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-builder.AddDockerComposeEnvironment("env");
+builder.AddDockerComposeEnvironment("env")
+	.WithDashboard(dashboard => dashboard.WithContainerName("aspire"));
 
 var registry = builder.AddContainerRegistry("registry", "registry.sussman.win", "traktv-tg-bot");
 
@@ -30,6 +31,7 @@ var tmdbApiKey = builder.AddParameter("tmdb-api-key");
 var env = builder.ExecutionContext.IsRunMode ? "dev" : "prod";
 
 var postgres = builder.AddPostgres("postgres", dbUser, dbPassword, 5432)
+	.WithContainerName("trakt-db")
 	.WithImageTag("17-alpine")
 	.WithEnvironment("POSTGRES_DB", dbName)
 	.WithDataVolume()
@@ -49,7 +51,7 @@ var postgres = builder.AddPostgres("postgres", dbUser, dbPassword, 5432)
 var database = postgres.AddDatabase("traktdb", databaseName: dbName);
 
 var bot = builder.AddDockerfile("bot", ".", "./Dockerfile", env)
-    .WithOtlpExporter()
+	.WithContainerName("bot")
 	.WithReference(database)
 	.WithEnvironment("TELEGRAM_BOT_TOKEN", telegramBotToken)
 	.WithEnvironment("TRAKT_CLIENT_ID", traktClientId)
@@ -72,7 +74,12 @@ var bot = builder.AddDockerfile("bot", ".", "./Dockerfile", env)
 	});
 
 if (env == "dev")
-	bot.WithBindMount(".", "/app");
+	bot.WithOtlpExporter()
+		.WithBindMount(".", "/app");
+else
+	bot.WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel_collector:4317")
+		.WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+		.WithEnvironment("OTEL_SERVICE_NAME", "bot");
 
 builder.Pipeline.AddStep(
 	"push-and-prepare-env",
