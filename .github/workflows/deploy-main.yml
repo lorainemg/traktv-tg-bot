@@ -23,8 +23,9 @@ jobs:
           set -euo pipefail
 
           required=(
-            PORTAINER_API_TOKEN
-            PORTAINER_URL
+            KOMODO_URL
+            KOMODO_API_KEY
+            KOMODO_API_SECRET
             POSTGRES_USER
             POSTGRES_PASSWORD
             TELEGRAM_BOT_TOKEN
@@ -52,7 +53,7 @@ jobs:
         run: |
           echo "$SECRETS_JSON" | jq -r '
             to_entries[]
-            | select(.key | test("^PORTAINER_|^GITHUB_") | not)
+            | select(.key | test("^PORTAINER_|^KOMODO_|^GITHUB_") | not)
             | "\(.key)=\(.value)",
               "Parameters__\(.key | ascii_downcase | gsub("_";"-"))=\(.value)"
           ' >> "$GITHUB_ENV"
@@ -77,16 +78,38 @@ jobs:
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
 
-      - name: Deploy to Portainer
-        uses: cssnr/portainer-stack-deploy-action@v1
-        with:
-          token: ${{ secrets.PORTAINER_API_TOKEN }}
-          url: ${{ secrets.PORTAINER_URL }}
-          endpoint: 3
-          name: trakt-tg-bot
-          type: file
-          file: aspire-output/docker-compose.yaml
-          env_file: aspire-output/.env.production
-          standalone: true
-          pull: true
-          prune: true
+      # Push the generated compose + env into the Komodo Stack (file_contents
+      # mode), then deploy it. The API key belongs to the `trakt-tg-bot-ci`
+      # service user, which has Write on this one stack and nothing else.
+      - name: Deploy to Komodo
+        env:
+          KOMODO_URL: ${{ secrets.KOMODO_URL }}
+          KOMODO_API_KEY: ${{ secrets.KOMODO_API_KEY }}
+          KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
+
+          # jq, not string interpolation: the YAML is full of quotes/newlines.
+          jq -n --rawfile yaml aspire-output/docker-compose.yaml \
+                --rawfile env aspire-output/.env.production '{
+            type: "UpdateStack",
+            params: { id: "trakt-tg-bot",
+                      config: { file_contents: $yaml, environment: $env } }
+          }' > payload.json
+          curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" --data @payload.json > /dev/null
+
+          # /execute is async: a 2xx means accepted, not deployed. Poll the
+          # Update until it completes and fail the job if the deploy failed.
+          update_id=$(curl -sf -X POST "$KOMODO_URL/execute" "${auth[@]}" \
+            -d '{"type":"DeployStack","params":{"stack":"trakt-tg-bot"}}' \
+            | jq -r '._id."$oid"')
+          for i in $(seq 1 60); do
+            sleep 5
+            status=$(curl -sf -X POST "$KOMODO_URL/read" "${auth[@]}" \
+              -d "{\"type\":\"GetUpdate\",\"params\":{\"id\":\"$update_id\"}}")
+            [ "$(jq -r .status <<<"$status")" = "Complete" ] && break
+          done
+          jq -e '.status == "Complete" and .success == true' <<<"$status" > /dev/null \
+            || { echo "Komodo deploy failed:"; jq . <<<"$status"; exit 1; }
