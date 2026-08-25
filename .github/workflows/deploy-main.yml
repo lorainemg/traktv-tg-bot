@@ -78,9 +78,9 @@ jobs:
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
 
-      # Push the generated compose + env into the Komodo Stack (file_contents
-      # mode), then deploy it. The API key belongs to the `trakt-tg-bot-ci`
-      # service user, which has Write on this one stack and nothing else.
+      # The deploy itself lives in .github/scripts/komodo-deploy.mjs, using
+      # Komodo's official typed client. The API key belongs to the
+      # `trakt-tg-bot-ci` service user: Write on this one stack, nothing else.
       - name: Deploy to Komodo
         env:
           KOMODO_URL: ${{ secrets.KOMODO_URL }}
@@ -88,28 +88,5 @@ jobs:
           KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
         shell: bash
         run: |
-          set -euo pipefail
-          auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
-
-          # jq, not string interpolation: the YAML is full of quotes/newlines.
-          jq -n --rawfile yaml aspire-output/docker-compose.yaml \
-                --rawfile env aspire-output/.env.production '{
-            type: "UpdateStack",
-            params: { id: "trakt-tg-bot",
-                      config: { file_contents: $yaml, environment: $env } }
-          }' > payload.json
-          curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" --data @payload.json > /dev/null
-
-          # /execute is async: a 2xx means accepted, not deployed. Poll the
-          # Update until it completes and fail the job if the deploy failed.
-          update_id=$(curl -sf -X POST "$KOMODO_URL/execute" "${auth[@]}" \
-            -d '{"type":"DeployStack","params":{"stack":"trakt-tg-bot"}}' \
-            | jq -r '._id."$oid"')
-          for i in $(seq 1 60); do
-            sleep 5
-            status=$(curl -sf -X POST "$KOMODO_URL/read" "${auth[@]}" \
-              -d "{\"type\":\"GetUpdate\",\"params\":{\"id\":\"$update_id\"}}")
-            [ "$(jq -r .status <<<"$status")" = "Complete" ] && break
-          done
-          jq -e '.status == "Complete" and .success == true' <<<"$status" > /dev/null \
-            || { echo "Komodo deploy failed:"; jq . <<<"$status"; exit 1; }
+          npm install --no-save --no-audit --no-fund komodo_client
+          node .github/scripts/komodo-deploy.mjs
