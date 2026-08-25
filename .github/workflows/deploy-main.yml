@@ -88,5 +88,8 @@ jobs:
           KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
         shell: bash
         run: |
-          npm install --no-save --no-audit --no-fund komodo_client
-          node .github/scripts/komodo-deploy.mjs
+          # Pinned to the server's Komodo version. --localstorage-file works
+          # around the client's auth helper assuming browser storage exists:
+          # Node provides a real localStorage when given a backing file.
+          npm install --no-save --no-audit --no-fund komodo_client@2.3.1
+          node --localstorage-file="$RUNNER_TEMP/komodo-ls.json" .github/scripts/komodo-deploy.mjs
