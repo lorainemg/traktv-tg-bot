@@ -78,16 +78,40 @@ jobs:
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
 
-      # Push the generated compose + env into the Komodo Stack (file_contents
-      # mode), then deploy it. Plain curl on purpose: the official npm client
-      # assumes browser storage at import time and needed a version pin plus
-      # two node flags to run at all (see PRs #6-#8). The API key belongs to
-      # the `trakt-tg-bot-ci` service user: Write on this one stack, nothing else.
-      - name: Deploy to Komodo
-        env:
-          KOMODO_URL: ${{ secrets.KOMODO_URL }}
-          KOMODO_API_KEY: ${{ secrets.KOMODO_API_KEY }}
-          KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
+      # Deploying is three calls to Komodo, one step each. Plain curl on
+      # purpose: the official npm client assumes browser storage at import time
+      # and needed a version pin plus two node flags to run at all (see PRs
+      # #6-#8). The API key belongs to the `trakt-tg-bot-ci` service user: Write
+      # on this one stack, plus Read + Attach on the server so it can create the
+      # stack when missing. KOMODO_URL / KOMODO_API_KEY / KOMODO_API_SECRET reach
+      # these steps through GITHUB_ENV, exported by the first step of the job.
+      - name: Ensure the Komodo stack exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
+
+          # First run against a server that has never seen this stack (or a
+          # rebuilt one): create the Stack shell if it is missing. Komodo lets
+          # non-admins create stacks unless KOMODO_DISABLE_NON_ADMIN_CREATE is
+          # set, needs Read + Attach on the server to place it there, and grants
+          # the creator Write on it. A missing stack answers HTTP 500 "Did not
+          # find any Stack", not a 404, so branch on the body, not the status.
+          lookup=$(curl -s -X POST "$KOMODO_URL/read" "${auth[@]}" \
+            -d '{"type":"GetStack","params":{"stack":"trakt-tg-bot"}}')
+          if jq -e '.error | test("Did not find any Stack")' <<<"$lookup" > /dev/null 2>&1; then
+            echo "Stack trakt-tg-bot does not exist yet; creating it"
+            curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" -d '{
+              "type": "CreateStack",
+              "params": { "name": "trakt-tg-bot", "config": {
+                "server_id": "Local", "project_name": "trakt-tg-bot",
+                "file_contents": "services: {}", "webhook_enabled": false } }
+            }' > /dev/null
+          elif ! jq -e '.name == "trakt-tg-bot"' <<<"$lookup" > /dev/null 2>&1; then
+            echo "GetStack failed:"; echo "$lookup"; exit 1
+          fi
+
+      - name: Push the generated compose and env to the stack
         shell: bash
         run: |
           set -euo pipefail
@@ -101,6 +125,12 @@ jobs:
                       config: { file_contents: $yaml, environment: $env } }
           }' > payload.json
           curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" --data @payload.json > /dev/null
+
+      - name: Deploy the stack and wait for the result
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
 
           # /execute is async: a 2xx means accepted, not deployed. Poll the
           # Update until it completes and fail the job if the deploy failed.
