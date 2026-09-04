@@ -32,6 +32,7 @@ jobs:
             TRAKT_CLIENT_ID
             TRAKT_CLIENT_SECRET
             TMDB_API_KEY
+            ASPIRE_BROWSER_TOKEN
           )
 
           for name in "${required[@]}"; do
@@ -122,7 +123,8 @@ jobs:
                 --rawfile env aspire-output/.env.production '{
             type: "UpdateStack",
             params: { id: "trakt-tg-bot",
-                      config: { file_contents: $yaml, environment: $env } }
+                      config: { file_contents: $yaml, environment: $env,
+                                links: ["http://172.20.3.194:28888"] } }
           }' > payload.json
           curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" --data @payload.json > /dev/null
 
