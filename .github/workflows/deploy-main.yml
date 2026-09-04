@@ -130,9 +130,11 @@ jobs:
           # The server's LAN address is declared once, in the homelab repo's
           # komodo/vars.env, and read from there rather than copied here. That
           # repo is public, so this needs no credentials.
-          host=$(curl -sf https://raw.githubusercontent.com/lorainemg/homelab/main/komodo/vars.env \
-                 | sed -n 's/^HOMELAB_LAN_IP=//p')
-          [ -n "$host" ] || { echo "HOMELAB_LAN_IP not found in the homelab repo's komodo/vars.env" >&2; exit 1; }
+          # `|| true` so a fetch failure reaches the guard below with a
+          # readable message instead of aborting the step under pipefail.
+          vars=$(curl -sf https://raw.githubusercontent.com/lorainemg/homelab/main/komodo/vars.env || true)
+          host=$(sed -n 's/^HOMELAB_LAN_IP=//p' <<<"$vars")
+          [ -n "$host" ] || { echo "could not read HOMELAB_LAN_IP from the homelab repo's komodo/vars.env" >&2; exit 1; }
 
           # jq, not string interpolation: the YAML is full of quotes/newlines.
           jq -n --rawfile yaml aspire-output/docker-compose.yaml \
