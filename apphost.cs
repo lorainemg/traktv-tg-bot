@@ -15,8 +15,14 @@ using Microsoft.Extensions.Logging;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+var aspireBrowserToken = builder.AddParameter("aspire-browser-token", secret: true);
+
 builder.AddDockerComposeEnvironment("env")
-	.WithDashboard(dashboard => dashboard.WithContainerName("aspire"));
+	.WithDashboard(dashboard => dashboard
+		.WithContainerName("aspire")
+		.WithHostPort(28888) // pinned: a random host port would break the Komodo link
+		.WithEnvironment("DASHBOARD__FRONTEND__AUTHMODE", "BrowserToken")
+		.WithEnvironment("DASHBOARD__FRONTEND__BROWSERTOKEN", aspireBrowserToken));
 
 var registry = builder.AddContainerRegistry("registry", "registry.sussman.win", "traktv-tg-bot");
 

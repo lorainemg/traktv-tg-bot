@@ -32,6 +32,7 @@ jobs:
             TRAKT_CLIENT_ID
             TRAKT_CLIENT_SECRET
             TMDB_API_KEY
+            ASPIRE_BROWSER_TOKEN
           )
 
           for name in "${required[@]}"; do
@@ -117,12 +118,23 @@ jobs:
           set -euo pipefail
           auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
 
+          # The dashboard link Komodo shows on the stack page. The host port is
+          # read back from Aspire's own output, so it is declared once, in
+          # apphost.cs. The token in the query string logs the browser in on
+          # click; the same token is already visible in the stack's Environment
+          # tab, so the link exposes nothing new.
+          port=$(yq '.services[] | select(.container_name == "aspire") | .ports[0]' \
+                   aspire-output/docker-compose.yaml | cut -d: -f1)
+          [ -n "$port" ] || { echo "no published dashboard port in the compose output" >&2; exit 1; }
+
           # jq, not string interpolation: the YAML is full of quotes/newlines.
           jq -n --rawfile yaml aspire-output/docker-compose.yaml \
-                --rawfile env aspire-output/.env.production '{
+                --rawfile env aspire-output/.env.production \
+                --arg host 172.20.3.194 --arg port "$port" --arg token "$ASPIRE_BROWSER_TOKEN" '{
             type: "UpdateStack",
             params: { id: "trakt-tg-bot",
-                      config: { file_contents: $yaml, environment: $env } }
+                      config: { file_contents: $yaml, environment: $env,
+                                links: ["http://\($host):\($port)/login?t=\($token | @uri)"] } }
           }' > payload.json
           curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" --data @payload.json > /dev/null
 
