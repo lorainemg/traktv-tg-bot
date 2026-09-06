@@ -24,7 +24,7 @@ builder.AddDockerComposeEnvironment("env")
 		.WithEnvironment("DASHBOARD__FRONTEND__AUTHMODE", "BrowserToken")
 		.WithEnvironment("DASHBOARD__FRONTEND__BROWSERTOKEN", aspireBrowserToken));
 
-var registry = builder.AddContainerRegistry("registry", "registry.sussman.win", "traktv-tg-bot");
+var registry = builder.AddContainerRegistry("registry", "ghcr.io", "lorainemg/traktv-tg-bot");
 
 var dbUser = builder.AddParameter("postgres-user");
 var dbPassword = builder.AddParameter("postgres-password", secret: true);

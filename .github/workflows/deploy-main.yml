@@ -12,6 +12,7 @@ jobs:
     environment: production
     permissions:
       contents: read
+      packages: write
 
     env:
       SECRETS_JSON: ${{ toJSON(secrets) }}
@@ -75,6 +76,16 @@ jobs:
         shell: bash
         run: aspire --version
 
+      # GHCR requires auth even to push to your own namespace. The automatic
+      # GITHUB_TOKEN can write packages under this repo's owner and nowhere else,
+      # which is exactly the scope wanted here — no stored secret to rotate.
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push images and prepare env with Aspire
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
@@ -117,6 +128,10 @@ jobs:
           create-if-missing: true
           compose-file: aspire-output/docker-compose.yaml
           env-file: aspire-output/.env.production
+          # Komodo logs in to GHCR before compose up, with the read-only account
+          # stored in its config (homelab: komodo/registries.config.toml).
+          registry-provider: ghcr.io
+          registry-account: lorainemg
           links: http://${HOMELAB_LAN_IP}:${{ steps.dash.outputs.port }}/login?t=${{ steps.dash.outputs.token }}
           vars: HOMELAB_LAN_IP=172.20.3.194
 
