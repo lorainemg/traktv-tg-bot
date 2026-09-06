@@ -79,81 +79,51 @@ jobs:
         shell: bash
         run: aspire do push-and-prepare-env --environment production --non-interactive
 
-      # Deploying is three calls to Komodo, one step each. Plain curl on
-      # purpose: the official npm client assumes browser storage at import time
-      # and needed a version pin plus two node flags to run at all (see PRs
-      # #6-#8). The API key belongs to the `trakt-tg-bot-ci` service user: Write
-      # on this one stack, plus Read + Attach on the server so it can create the
-      # stack when missing. KOMODO_URL / KOMODO_API_KEY / KOMODO_API_SECRET reach
-      # these steps through GITHUB_ENV, exported by the first step of the job.
-      - name: Ensure the Komodo stack exists
+      # Deploying is two calls to Komodo, one step each, through the shared
+      # composite actions in the homelab repo: one tested Python client instead
+      # of hand-rolled curl in two repos. Creating the stack when it is missing
+      # is folded into update-stack. The API key belongs to the
+      # `trakt-tg-bot-ci` service user: Write on this one stack, plus Read +
+      # Attach on the server so create-if-missing can place it there.
+      # KOMODO_URL / KOMODO_API_KEY / KOMODO_API_SECRET reach these steps
+      # through GITHUB_ENV, exported by the first step of the job.
+      - name: Read the dashboard's published port
+        id: dash
         shell: bash
         run: |
           set -euo pipefail
-          auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
-
-          # First run against a server that has never seen this stack (or a
-          # rebuilt one): create the Stack shell if it is missing. Komodo lets
-          # non-admins create stacks unless KOMODO_DISABLE_NON_ADMIN_CREATE is
-          # set, needs Read + Attach on the server to place it there, and grants
-          # the creator Write on it. A missing stack answers HTTP 500 "Did not
-          # find any Stack", not a 404, so branch on the body, not the status.
-          lookup=$(curl -s -X POST "$KOMODO_URL/read" "${auth[@]}" \
-            -d '{"type":"GetStack","params":{"stack":"trakt-tg-bot"}}')
-          if jq -e '.error | test("Did not find any Stack")' <<<"$lookup" > /dev/null 2>&1; then
-            echo "Stack trakt-tg-bot does not exist yet; creating it"
-            curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" -d '{
-              "type": "CreateStack",
-              "params": { "name": "trakt-tg-bot", "config": {
-                "server_id": "Local", "project_name": "trakt-tg-bot",
-                "file_contents": "services: {}", "webhook_enabled": false } }
-            }' > /dev/null
-          elif ! jq -e '.name == "trakt-tg-bot"' <<<"$lookup" > /dev/null 2>&1; then
-            echo "GetStack failed:"; echo "$lookup"; exit 1
-          fi
-
-      - name: Push the generated compose and env to the stack
-        shell: bash
-        run: |
-          set -euo pipefail
-          auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
-
-          # The dashboard link Komodo shows on the stack page. The host port is
-          # read back from Aspire's own output, so it is declared once, in
-          # apphost.cs. The token in the query string logs the browser in on
-          # click; the same token is already visible in the stack's Environment
-          # tab, so the link exposes nothing new.
+          # The host port is read back from Aspire's own output, so it is
+          # declared once, in apphost.cs.
           port=$(yq '.services[] | select(.container_name == "aspire") | .ports[0]' \
                    aspire-output/docker-compose.yaml | cut -d: -f1)
           [ -n "$port" ] || { echo "no published dashboard port in the compose output" >&2; exit 1; }
+          echo "port=$port" >> "$GITHUB_OUTPUT"
 
-          # jq, not string interpolation: the YAML is full of quotes/newlines.
-          jq -n --rawfile yaml aspire-output/docker-compose.yaml \
-                --rawfile env aspire-output/.env.production \
-                --arg host 172.20.3.194 --arg port "$port" --arg token "$ASPIRE_BROWSER_TOKEN" '{
-            type: "UpdateStack",
-            params: { id: "trakt-tg-bot",
-                      config: { file_contents: $yaml, environment: $env,
-                                links: ["http://\($host):\($port)/login?t=\($token | @uri)"] } }
-          }' > payload.json
-          curl -sf -X POST "$KOMODO_URL/write" "${auth[@]}" --data @payload.json > /dev/null
+          # The token logs the browser in on click, and it lands in a query
+          # string, so percent-encode it: a bare + would arrive as a space.
+          # The encoded form is a different string from the registered secret,
+          # so mask it explicitly or GitHub would not redact it from a log.
+          token=$(jq -rn --arg t "$ASPIRE_BROWSER_TOKEN" '$t|@uri')
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Push the generated compose and env to the stack
+        uses: lorainemg/homelab/.github/actions/komodo/update-stack@main
+        with:
+          komodo-url: ${{ env.KOMODO_URL }}
+          api-key: ${{ env.KOMODO_API_KEY }}
+          api-secret: ${{ env.KOMODO_API_SECRET }}
+          stack: trakt-tg-bot
+          create-if-missing: true
+          compose-file: aspire-output/docker-compose.yaml
+          env-file: aspire-output/.env.production
+          links: http://${HOMELAB_LAN_IP}:${{ steps.dash.outputs.port }}/login?t=${{ steps.dash.outputs.token }}
+          vars: HOMELAB_LAN_IP=172.20.3.194
 
       - name: Deploy the stack and wait for the result
-        shell: bash
-        run: |
-          set -euo pipefail
-          auth=(-H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" -H 'Content-Type: application/json')
-
-          # /execute is async: a 2xx means accepted, not deployed. Poll the
-          # Update until it completes and fail the job if the deploy failed.
-          update_id=$(curl -sf -X POST "$KOMODO_URL/execute" "${auth[@]}" \
-            -d '{"type":"DeployStack","params":{"stack":"trakt-tg-bot"}}' \
-            | jq -r '._id."$oid"')
-          for i in $(seq 1 60); do
-            sleep 5
-            status=$(curl -sf -X POST "$KOMODO_URL/read" "${auth[@]}" \
-              -d "{\"type\":\"GetUpdate\",\"params\":{\"id\":\"$update_id\"}}")
-            [ "$(jq -r .status <<<"$status")" = "Complete" ] && break
-          done
-          jq -e '.status == "Complete" and .success == true' <<<"$status" > /dev/null \
-            || { echo "Komodo deploy failed:"; jq . <<<"$status"; exit 1; }
+        uses: lorainemg/homelab/.github/actions/komodo/deploy-stack@main
+        with:
+          komodo-url: ${{ env.KOMODO_URL }}
+          api-key: ${{ env.KOMODO_API_KEY }}
+          api-secret: ${{ env.KOMODO_API_SECRET }}
+          stack: trakt-tg-bot
